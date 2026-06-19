@@ -8,6 +8,11 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.1: 日付入力をまとめて単一欄化
+    - 年/月/日の独立セレクトを廃止
+    - テンキー入力で YYYY/MM/DD（区切りスラッシュ自動挿入）の単一テキスト欄に変更
+    - 📅カレンダーボタンでネイティブ日付ピッカーからも選択可能
+    - getDateISO/setDate/onDateTextInput 等で日付を扱う
   v2: 大幅刷新
     - アプリ名を「からだログ」に変更（子ども限定でなく生涯の記録）
     - グラフ凡例: 取り消し線方式をやめ、ON/OFFチップ式トグルに変更
@@ -322,16 +327,30 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 .form-input-wrap:focus-within .btn-clear-field,
 .form-input-wrap.has-val .btn-clear-field{opacity:1;pointer-events:auto;}
 
-/* 年/月/日 独立セレクト（日付入力の誤操作対策） */
-.date-select-row{display:flex;gap:6px;align-items:center;}
-.date-select-row select{
-  border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 6px;
-  background:var(--surface2);color:var(--text);flex:1;min-width:0;
-  text-align:center;text-align-last:center;
+/* ============================================================
+   日付入力（テンキー＋スラッシュ区切り単一欄 ＋ カレンダー選択）
+   - テキスト欄: YYYY/MM/DD をテンキーで入力（区切りは自動挿入）
+   - カレンダーボタン: ネイティブの日付ピッカーを開く
+   ============================================================ */
+.date-input-row{display:flex;gap:6px;align-items:stretch;}
+.date-input-wrap{position:relative;flex:1;display:flex;align-items:center;}
+.date-input-wrap .form-input{
+  padding-right:34px;font-variant-numeric:tabular-nums;letter-spacing:.04em;
 }
-.date-select-row select:focus{outline:none;border-color:var(--accent);background:var(--surface);}
-.date-select-row .ds-sep{font-size:12px;color:var(--text3);font-weight:700;}
-.date-select-row select.ds-year{flex:1.4;}
+.date-input-wrap .btn-clear-field{right:9px;}
+/* カレンダーボタン */
+.btn-calendar{
+  width:46px;flex-shrink:0;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--surface2);color:var(--text2);font-size:18px;
+  display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;
+  position:relative;
+}
+.btn-calendar:hover{background:var(--border);border-color:var(--accent);color:var(--accent);}
+/* ネイティブdateを重ねて透明化（クリックでピッカー起動） */
+.btn-calendar input[type=date]{
+  position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;
+  border:none;padding:0;
+}
 
 .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
 .btn-primary{
@@ -520,7 +539,17 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
         </div>
         <div class="form-field" style="flex:1.6">
           <label>生年月日</label>
-          <div class="date-select-row" id="newPersonBirthRow"></div>
+          <div class="date-input-row" id="newPersonBirthRow">
+            <div class="date-input-wrap" id="wrap_pb">
+              <input type="text" class="form-input" id="pb_text" inputmode="numeric" maxlength="10"
+                placeholder="生年月日を入力 (例 1990/01/15)"
+                oninput="App.onDateTextInput('pb')" onkeydown="App.dateTextKeyDown(event,'pb')">
+              <button class="btn-clear-field" onclick="App.clearDateField('pb')">✕</button>
+            </div>
+            <label class="btn-calendar" title="カレンダーから選択">📅
+              <input type="date" id="pb_picker" onchange="App.onDatePickerChange('pb')">
+            </label>
+          </div>
         </div>
       </div>
       <div class="form-actions">
@@ -581,7 +610,17 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
     <div class="form-row">
       <div class="form-field" style="flex:1">
         <label>日付</label>
-        <div class="date-select-row" id="growthDateRow"></div>
+        <div class="date-input-row" id="growthDateRow">
+          <div class="date-input-wrap" id="wrap_gd">
+            <input type="text" class="form-input" id="gd_text" inputmode="numeric" maxlength="10"
+              placeholder="YYYY/MM/DD"
+              oninput="App.onDateTextInput('gd')" onkeydown="App.dateTextKeyDown(event,'gd')">
+            <button class="btn-clear-field" onclick="App.clearDateField('gd')">✕</button>
+          </div>
+          <label class="btn-calendar" title="カレンダーから選択">📅
+            <input type="date" id="gd_picker" onchange="App.onDatePickerChange('gd')">
+          </label>
+        </div>
       </div>
     </div>
     <!-- 月齢/年齢は誕生日から自動算出して表示（手入力なし） -->
@@ -661,7 +700,17 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
     <div class="form-row">
       <div class="form-field">
         <label>日付</label>
-        <div class="date-select-row" id="healthDateRow"></div>
+        <div class="date-input-row" id="healthDateRow">
+          <div class="date-input-wrap" id="wrap_hd">
+            <input type="text" class="form-input" id="hd_text" inputmode="numeric" maxlength="10"
+              placeholder="YYYY/MM/DD"
+              oninput="App.onDateTextInput('hd')" onkeydown="App.dateTextKeyDown(event,'hd')">
+            <button class="btn-clear-field" onclick="App.clearDateField('hd')">✕</button>
+          </div>
+          <label class="btn-calendar" title="カレンダーから選択">📅
+            <input type="date" id="hd_picker" onchange="App.onDatePickerChange('hd')">
+          </label>
+        </div>
       </div>
     </div>
     <!-- ワクテン用のステータス・回数（カテゴリ=ワクチンの時のみ表示） -->
@@ -865,66 +914,115 @@ const App = (() => {
     if(tab === 'growth') renderChart();
   }
 
-  /* ============================================================ 日付セレクト構築（年/月/日 独立） ============================================================
-     年は誤入力を防ぐためセレクト固定、月・日も独立。移動誤操作なし。 */
+  /* ============================================================ 日付入力（単一欄：テンキー＋スラッシュ自動区切り／カレンダー併用） ============================================================
+     - テキスト欄に YYYY/MM/DD を入力。数字だけ打てば区切りスラッシュを自動挿入。
+     - カレンダーボタンでネイティブの日付ピッカーを開き、選択結果をテキスト欄へ反映。
+     - getDateISO(prefix) で ISO(YYYY-MM-DD) を取得、setDate(prefix,iso) でセット。 */
   function buildDateSelects(){
-    const thisYear = new Date().getFullYear();
-    // 生年月日は過去120年〜今年、記録日は過去30年〜来年
-    buildDateRow('newPersonBirthRow', 'pb', thisYear-120, thisYear, true);
-    buildDateRow('growthDateRow', 'gd', thisYear-30, thisYear+1, false);
-    buildDateRow('healthDateRow', 'hd', thisYear-30, thisYear+1, false);
+    // 記録日系は初期値を今日に。生年月日は空のまま。
+    const today = new Date().toISOString().slice(0,10);
+    setDate('gd', today);
+    setDate('hd', today);
+    // pb（生年月日）は空のまま
   }
-  /* 1組の年/月/日セレクトを生成。prefixでid識別。isBirth=trueは初期空（生年月日を入力） */
-  function buildDateRow(rowId, prefix, yearStart, yearEnd, isBirth){
-    const row = document.getElementById(rowId);
-    if(!row) return;
-    const today = new Date();
-    // 年
-    let yearOpts = isBirth ? '<option value="">年</option>' : '';
-    for(let y=yearEnd; y>=yearStart; y--) yearOpts += `<option value="${y}">${y}年</option>`;
-    // 月
-    let monthOpts = isBirth ? '<option value="">月</option>' : '';
-    for(let m=1; m<=12; m++) monthOpts += `<option value="${m}">${m}月</option>`;
-    // 日
-    let dayOpts = isBirth ? '<option value="">日</option>' : '';
-    for(let d=1; d<=31; d++) dayOpts += `<option value="${d}">${d}日</option>`;
 
-    row.innerHTML = `
-      <select class="ds-year" id="${prefix}_year" onchange="App.onDateChange('${prefix}')">${yearOpts}</select>
-      <select id="${prefix}_month" onchange="App.onDateChange('${prefix}')">${monthOpts}</select>
-      <select id="${prefix}_day" onchange="App.onDateChange('${prefix}')">${dayOpts}</select>
-    `;
-    // 記録日系はデフォルト今日
-    if(!isBirth){
-      row.querySelector(`#${prefix}_year`).value = today.getFullYear();
-      row.querySelector(`#${prefix}_month`).value = today.getMonth()+1;
-      row.querySelector(`#${prefix}_day`).value = today.getDate();
+  /* 入力中：数字を抽出し YYYY/MM/DD 形式に整形してスラッシュを自動挿入 */
+  function onDateTextInput(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(!el) return;
+    // 数字以外を除去（最大8桁=YYYYMMDD）
+    let digits = el.value.replace(/[^0-9]/g,'').slice(0,8);
+    let formatted = digits;
+    if(digits.length > 4 && digits.length <= 6){
+      formatted = digits.slice(0,4) + '/' + digits.slice(4);
+    }else if(digits.length > 6){
+      formatted = digits.slice(0,4) + '/' + digits.slice(4,6) + '/' + digits.slice(6);
+    }
+    el.value = formatted;
+    // クリアボタン表示制御
+    const wrap = document.getElementById('wrap_'+prefix);
+    if(wrap) wrap.classList.toggle('has-val', el.value.length>0);
+    // ピッカーと月齢プレビューを同期
+    syncPickerFromText(prefix);
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* キー操作：Enterで確定（次へ移動 or 保存）。区切りは自動なので特別処理は最小限 */
+  function dateTextKeyDown(e, prefix){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      // 所属モーダルに応じて次のフィールドへ
+      if(prefix==='gd'){ document.getElementById('g_height')?.focus(); document.getElementById('g_height')?.select(); }
+      else if(prefix==='hd'){ document.getElementById('h_body')?.focus(); }
+      else if(prefix==='pb'){ /* 生年月日入力後は追加ボタンへ誘導（フォーカスのみ外す） */ e.target.blur(); }
     }
   }
-  /* セレクトから ISO日付文字列(YYYY-MM-DD)を取得。未選択ならnull */
-  function getDateFromRow(prefix){
-    const y = document.getElementById(prefix+'_year')?.value;
-    const m = document.getElementById(prefix+'_month')?.value;
-    const d = document.getElementById(prefix+'_day')?.value;
-    if(!y || !m || !d) return null;
+
+  /* カレンダーピッカーで選択された値をテキスト欄へ反映 */
+  function onDatePickerChange(prefix){
+    const picker = document.getElementById(prefix+'_picker');
+    if(!picker || !picker.value) return;
+    setDate(prefix, picker.value);
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* テキスト欄の値が妥当ならネイティブピッカーにも反映（カレンダー初期表示位置を合わせる） */
+  function syncPickerFromText(prefix){
+    const iso = getDateISO(prefix);
+    const picker = document.getElementById(prefix+'_picker');
+    if(picker) picker.value = iso || '';
+  }
+
+  /* クリアボタン */
+  function clearDateField(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(el){ el.value=''; el.focus(); }
+    const picker = document.getElementById(prefix+'_picker');
+    if(picker) picker.value='';
+    const wrap = document.getElementById('wrap_'+prefix);
+    if(wrap) wrap.classList.remove('has-val');
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* テキスト欄から ISO日付(YYYY-MM-DD)を取得。不正・未入力ならnull */
+  function getDateISO(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(!el) return null;
+    const digits = el.value.replace(/[^0-9]/g,'');
+    if(digits.length !== 8) return null;
+    const y = +digits.slice(0,4), m = +digits.slice(4,6), d = +digits.slice(6,8);
+    // 妥当性チェック（実在する日付か）
+    if(m<1||m>12||d<1||d>31) return null;
+    const dt = new Date(y, m-1, d);
+    if(dt.getFullYear()!==y || dt.getMonth()!==m-1 || dt.getDate()!==d) return null;
     return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   }
-  /* ISO日付をセレクトにセット */
-  function setDateToRow(prefix, iso){
-    if(!iso) return;
-    const [y,m,d] = iso.split('-').map(Number);
-    const ye=document.getElementById(prefix+'_year'), me=document.getElementById(prefix+'_month'), de=document.getElementById(prefix+'_day');
-    if(ye) ye.value=y; if(me) me.value=m; if(de) de.value=d;
+
+  /* ISO日付をテキスト欄＋ピッカーにセット */
+  function setDate(prefix, iso){
+    const el = document.getElementById(prefix+'_text');
+    const picker = document.getElementById(prefix+'_picker');
+    if(!iso){
+      if(el) el.value='';
+      if(picker) picker.value='';
+      const wrap=document.getElementById('wrap_'+prefix);
+      if(wrap) wrap.classList.remove('has-val');
+      return;
+    }
+    const [y,m,d] = iso.split('-');
+    if(el){
+      el.value = `${y}/${m}/${d}`;
+      const wrap=document.getElementById('wrap_'+prefix);
+      if(wrap) wrap.classList.add('has-val');
+    }
+    if(picker) picker.value = iso;
   }
-  /* 日付変更時：成長モーダルなら月齢プレビュー更新 */
-  function onDateChange(prefix){
-    if(prefix === 'gd') updateGrowthAgePreview();
-  }
+
   /* 成長モーダルの月齢プレビュー（誕生日から自動算出） */
   function updateGrowthAgePreview(){
     const el = document.getElementById('growthAgePreview');
     const person = data.persons.find(p => p.id === currentPersonId);
-    const date = getDateFromRow('gd');
+    const date = getDateISO('gd');
     if(person && person.birthDate && date){
       const age = calcAge(person.birthDate, date);
       el.textContent = age ? `👤 ${person.name} ・ ${age}` : (person.name || '');
@@ -1336,7 +1434,7 @@ const App = (() => {
   function resetGrowthForm(){
     ['g_height','g_weight','g_chest','g_head','g_note'].forEach(id=>document.getElementById(id).value='');
     const t=new Date();
-    setDateToRow('gd', t.toISOString().slice(0,10));
+    setDate('gd', t.toISOString().slice(0,10));
     ['gheight','gweight','gchest','ghead','gnote'].forEach(fieldUpdate);
   }
 
@@ -1376,7 +1474,7 @@ const App = (() => {
     document.getElementById('h_body').value='';
     document.getElementById('h_dose').value='';
     document.getElementById('h_status').value='done';
-    setDateToRow('hd', new Date().toISOString().slice(0,10));
+    setDate('hd', new Date().toISOString().slice(0,10));
     ['hname','hbody','hdose'].forEach(fieldUpdate);
   }
 
@@ -1413,7 +1511,7 @@ const App = (() => {
   /* ============================================================ 保存 ============================================================ */
   function saveGrowth(){
     if(data.settings.locked){ showToast('編集ロック中'); return; }
-    const date=getDateFromRow('gd');
+    const date=getDateISO('gd');
     if(!date){ showToast('日付を選択してください'); return; }
     if(!currentPersonId){ showToast('人物を選択してください'); return; }
     const h=parseFloat(document.getElementById('g_height').value)||null;
@@ -1439,7 +1537,7 @@ const App = (() => {
     if(!personId){ showToast('人物を選択してください'); return; }
     const rec={
       id:uid(), personId, category:selectedCat,
-      name, body, date:getDateFromRow('hd'),
+      name, body, date:getDateISO('hd'),
       createdAt:new Date().toISOString(),
     };
     if(selectedCat==='ワクチン'){
@@ -1490,12 +1588,12 @@ const App = (() => {
   function addPerson(){
     const name=document.getElementById('newPersonName').value.trim();
     if(!name){ showToast('名前を入力してください'); return; }
-    const birth=getDateFromRow('pb'); // 未選択ならnull
+    const birth=getDateISO('pb'); // 未入力ならnull
     data.persons.push({ id:uid(), name, birthDate:birth });
     document.getElementById('newPersonName').value='';
     fieldUpdate('pname');
-    // 生年月日セレクトを空に戻す
-    ['pb_year','pb_month','pb_day'].forEach(id=>{document.getElementById(id).value='';});
+    // 生年月日欄を空に戻す
+    clearDateField('pb');
     saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList();
     showToast(name+'を追加しました');
   }
@@ -1646,7 +1744,8 @@ const App = (() => {
     openAddModal, closeModal, saveGrowth, saveHealth,
     softDelete, restoreItem, purgeItem, restoreAll, purgeAll,
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
-    onDateChange, addPerson, removePerson,
+    onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
+    addPerson, removePerson,
     importJSON, confirmImport, exportJSON, clearAllData, sync,
     openCatFilter, applyCatFilter, catFilterSelectAll,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
