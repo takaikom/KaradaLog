@@ -8,6 +8,16 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.3: GAS接続失敗（CORS）を修正
+    - fetchのContent-Typeを application/json → text/plain に変更
+    - これによりブラウザのCORSプリフライト(OPTIONS)が発生せず、
+      GASがdoOptionsを返せない問題を回避（接続失敗の根本原因）
+    - mode:'cors' を外し redirect:'follow' を指定（GASの302リダイレクト対応）
+  v2.2: GAS連携に接続/解除ボタンを追加
+    - URL入力後「🔗接続」ボタンで疎通確認→接続状態を表示
+    - 「🔌解除」ボタンで連携解除（ローカルデータは保持）
+    - 接続状態（●接続済み/○未接続）を明示
+    - 未接続時はヘッダー同期ボタンを薄く表示し、押下で設定タブへ誘導
   v2.1: 日付入力をまとめて単一欄化
     - 年/月/日の独立セレクトを廃止
     - テンキー入力で YYYY/MM/DD（区切りスラッシュ自動挿入）の単一テキスト欄に変更
@@ -566,6 +576,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
           oninput="App.fieldUpdate('gas')">
         <button class="btn-clear-field" onclick="App.clearField('gasUrl','gas')">✕</button>
       </div>
+      <!-- 接続状態表示 -->
+      <div id="gasStatus" style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;margin:10px 0 4px"></div>
+      <!-- 接続/解除ボタン -->
+      <div class="form-actions" style="justify-content:flex-start">
+        <button class="btn-primary" id="gasConnectBtn" onclick="App.connectGas()">🔗 接続</button>
+        <button class="btn-secondary" id="gasDisconnectBtn" onclick="App.disconnectGas()" style="display:none;color:var(--red);border-color:var(--red)">🔌 解除</button>
+      </div>
     </div>
 
     <!-- データ管理 -->
@@ -803,7 +820,7 @@ const App = (() => {
     persons: [],
     growth: [],
     healthRecords: [],
-    settings: { gasUrl:'', darkMode:false, locked:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
+    settings: { gasUrl:'', gasConnected:false, darkMode:false, locked:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
   };
 
   /* ── UI状態 ── */
@@ -845,6 +862,7 @@ const App = (() => {
     renderPersonList();
     document.getElementById('gasUrl').value = data.settings.gasUrl || '';
     fieldUpdate('gas');
+    renderGasStatus();            // GAS接続状態の表示
     // ポップオーバー外クリックで閉じる
     document.addEventListener('click', e => {
       if(!e.target.closest('.filter-pop') && !e.target.closest('.filter-btn')){
@@ -1707,14 +1725,91 @@ const App = (() => {
     saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全データ削除しました');
   }
 
+  /* ============================================================ GAS接続管理（接続・解除・状態表示） ============================================================ */
+  /* 接続状態の表示更新（ステータス文言＋ボタン出し分け） */
+  function renderGasStatus(){
+    const statusEl=document.getElementById('gasStatus');
+    const connectBtn=document.getElementById('gasConnectBtn');
+    const disconnectBtn=document.getElementById('gasDisconnectBtn');
+    const syncBtn=document.getElementById('btnSync');
+    if(!statusEl) return;
+    if(data.settings.gasConnected && data.settings.gasUrl){
+      // 接続済み
+      statusEl.innerHTML='<span style="color:var(--green)">●</span> <span style="color:var(--green)">接続済み</span>';
+      connectBtn.textContent='🔄 再接続';
+      connectBtn.style.display='';
+      disconnectBtn.style.display='';
+      // ヘッダーの同期ボタンを有効に見せる
+      syncBtn.style.opacity='1';
+    }else{
+      // 未接続
+      statusEl.innerHTML='<span style="color:var(--text3)">○</span> <span style="color:var(--text3)">未接続</span>';
+      connectBtn.textContent='🔗 接続';
+      connectBtn.style.display='';
+      disconnectBtn.style.display='none';
+      syncBtn.style.opacity='.5';
+    }
+  }
+
+  /* 接続ボタン：URLを保存し、実際に疎通確認してから接続状態にする */
+  async function connectGas(){
+    const url=(document.getElementById('gasUrl').value||'').trim();
+    if(!url){ showToast('GAS URLを入力してください'); return; }
+    if(!/^https:\/\/script\.google\.com\//.test(url)){
+      if(!confirm('Google Apps ScriptのURL形式と異なります。このまま接続を試みますか？')) return;
+    }
+    const btn=document.getElementById('gasConnectBtn');
+    const orig=btn.textContent;
+    btn.textContent='接続中...'; btn.disabled=true;
+    try{
+      // 疎通確認。Content-Typeはtext/plainにしてCORSプリフライト(OPTIONS)を回避する
+      // （GASはdoOptionsを返せないため、application/jsonだとブラウザにブロックされ接続失敗する）
+      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
+      const json=await res.json();
+      if(json.status==='ok'){
+        // 接続成功：URL保存＋接続フラグON、返却データをマージ
+        data.settings.gasUrl=url;
+        data.settings.gasConnected=true;
+        if(json.data){
+          data.persons=json.data.persons||data.persons;
+          data.growth=json.data.growth||data.growth;
+          data.healthRecords=json.data.healthRecords||data.healthRecords;
+        }
+        saveData();
+        renderGasStatus();
+        renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+        showToast('✅ 接続しました（同期完了）');
+      }else{
+        showToast('接続エラー: '+(json.message||'応答が不正です'));
+      }
+    }catch(e){
+      showToast('接続失敗: URLを確認してください');
+    }finally{
+      btn.textContent=orig; btn.disabled=false;
+    }
+  }
+
+  /* 解除ボタン：接続フラグをOFFにする（URL自体は残すか確認） */
+  function disconnectGas(){
+    if(!confirm('GAS連携を解除します。\n（ローカルのデータは残ります）')) return;
+    data.settings.gasConnected=false;
+    saveData();
+    renderGasStatus();
+    showToast('🔌 連携を解除しました');
+  }
+
   /* ============================================================ GAS同期 ============================================================ */
   async function sync(){
-    const url=(document.getElementById('gasUrl').value||data.settings.gasUrl||'').trim();
+    const url=(document.getElementById('gasUrl')?.value||data.settings.gasUrl||'').trim();
+    // 未接続なら設定タブへ誘導
+    if(!url || !data.settings.gasConnected){
+      showToast('先に設定タブでGASに接続してください'); switchTab('settings'); return;
+    }
     data.settings.gasUrl=url; saveData();
-    if(!url){ showToast('GAS URLが未設定です（設定タブ）'); switchTab('settings'); return; }
     const btn=document.getElementById('btnSync'); btn.classList.add('syncing');
     try{
-      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'application/json'},mode:'cors'});
+      // Content-Typeはtext/plainにしてCORSプリフライトを回避（GAS連携の必須対応）
+      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
       const json=await res.json();
       if(json.status==='ok'){
         if(json.data){
@@ -1747,6 +1842,7 @@ const App = (() => {
     onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
     addPerson, removePerson,
     importJSON, confirmImport, exportJSON, clearAllData, sync,
+    connectGas, disconnectGas,
     openCatFilter, applyCatFilter, catFilterSelectAll,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
   };
