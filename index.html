@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<!--
+  ============================================================
+  karada-log-v2.html （旧 health-tracker-v1.html）
+  アプリ名: からだログ / Karada Log
+  「生涯の成長・健康記録」をコンセプトに刷新
+
+  【変更履歴】
+  v2: 大幅刷新
+    - アプリ名を「からだログ」に変更（子ども限定でなく生涯の記録）
+    - グラフ凡例: 取り消し線方式をやめ、ON/OFFチップ式トグルに変更
+    - 人物(ユーザー)切替ボタンの不具合修正（イベント再バインド方式へ）
+    - インポート時に対象人物を選択して紐付け
+    - 日付入力を「年/月/日」独立セレクトに変更（4桁制限・移動誤操作を解消）
+    - ワクチン記録を「健康管理」タブに統合（カテゴリの一種として扱う）
+    - 健康管理にカテゴリ＋期間フィルター（Excel風オートフィルタUI）
+    - 月齢/年齢を誕生日から自動算出（手入力廃止）
+    - 生年月日入力欄のラベル/プレースホルダを明確化
+    - ゴミ箱タブ廃止 → 設定タブ内に「ゴミ箱」セクションとして統合
+    - タブ構成: 成長 / 健康管理 / 設定 の3つ
+
+  v1: 初版（health-tracker-v1.html）
+
+  【引き継ぎ注意（改修時も維持すること）】
+  - 各コード・ブロックに意味のコメントを必ず残す
+  - 全データは localStorage キー "karadaLogData" に保存
+  - GASシート構成: persons / growth / healthRecords
+    （v1のvaccines/healthNotesはhealthRecordsに統合）
+  - 年齢算出は calcAge(birthDate, targetDate) を使う
+  - 削除は2段階: deleted:true(一時) → purge(完全)
+  - finance-tracker-v67.html 同等の汎用ルールを適用済み
+  ============================================================
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>からだログ</title>
+<style>
+/* ============================================================
+   CSS変数 - ダーク/ライト両対応のデザイントークン
+   ============================================================ */
+:root{
+  --bg:#f4f6fb; --surface:#ffffff; --surface2:#eef1f8; --surface3:#e4e9f4;
+  --border:#e0e4ef; --border2:#c8cedd;
+  --text:#1a1d2e; --text2:#4a5068; --text3:#8890a8;
+  --accent:#5b7cfa; --accent-soft:#e9effe; --accent-dark:#4263e0;
+  --green:#22b765; --green-soft:#e4f8ee;
+  --red:#e24b4a; --red-soft:#feecec;
+  --orange:#f0980b; --orange-soft:#fff6e6;
+  --purple:#9c5cf5; --purple-soft:#f3effe;
+  --teal:#10b3c6; --teal-soft:#e4f7f9;
+  --pink:#ec4899; --pink-soft:#fdecf5;
+  --shadow:0 2px 12px rgba(30,40,90,0.07);
+  --shadow2:0 8px 28px rgba(30,40,90,0.16);
+  --radius:16px; --radius-sm:10px;
+  --header-h:58px; --tab-h:54px;
+}
+.dark{
+  --bg:#0f1119; --surface:#1a1d2b; --surface2:#232739; --surface3:#2c3147;
+  --border:#2a2f44; --border2:#3a4060;
+  --text:#eef0f8; --text2:#9aa0be; --text3:#5c6180;
+  --accent:#7290ff; --accent-soft:#1b2541; --accent-dark:#5b7cfa;
+  --green:#34d17a; --green-soft:#0e2b1e;
+  --red:#f06464; --red-soft:#2c1313;
+  --orange:#fbbf24; --orange-soft:#2c1e06;
+  --purple:#b17afa; --purple-soft:#1f1340;
+  --teal:#2dd4e6; --teal-soft:#0c2b30;
+  --pink:#f472b6; --pink-soft:#2e1322;
+  --shadow:0 2px 12px rgba(0,0,0,0.35);
+  --shadow2:0 8px 28px rgba(0,0,0,0.5);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic UI',sans-serif;
+  background:var(--bg); color:var(--text); font-size:15px; line-height:1.5;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .25s,color .25s;
+}
+button{cursor:pointer;border:none;background:none;font-family:inherit;font-size:inherit;color:inherit;}
+input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
+
+/* ============================================================
+   ヘッダー
+   ============================================================ */
+.header{
+  position:fixed;top:0;left:0;right:0;z-index:100;height:var(--header-h);
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:8px;box-shadow:var(--shadow);
+}
+.header-logo{
+  display:flex;align-items:center;gap:8px;flex:1;
+}
+.header-logo .logo-mark{
+  width:34px;height:34px;border-radius:10px;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+  box-shadow:0 3px 10px rgba(91,124,250,.35);
+}
+.header-logo .logo-text{font-size:18px;font-weight:800;letter-spacing:.01em;}
+.header-logo .logo-text small{font-size:10px;font-weight:600;color:var(--text3);display:block;letter-spacing:.08em;margin-top:-3px;}
+.icon-btn{
+  width:40px;height:40px;border-radius:50%;
+  background:var(--surface2);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:17px;
+  transition:background .2s;flex-shrink:0;
+}
+.icon-btn:hover{background:var(--border);}
+.icon-btn.btn-lock.locked{background:var(--orange-soft);border-color:var(--orange);color:var(--orange);}
+.icon-btn.btn-sync{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.icon-btn.btn-sync:hover{background:var(--accent);color:#fff;}
+.icon-btn.btn-sync.syncing{animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ============================================================
+   タブナビ
+   ============================================================ */
+.tabs{
+  position:fixed;top:var(--header-h);left:0;right:0;z-index:90;height:var(--tab-h);
+  background:var(--surface);border-bottom:1px solid var(--border);display:flex;
+}
+.tab-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:6px 4px;font-size:11px;font-weight:700;color:var(--text3);
+  border-bottom:3px solid transparent;transition:color .15s,border-color .15s;
+}
+.tab-btn .tab-icon{font-size:19px;}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ============================================================
+   メイン
+   ============================================================ */
+.main{
+  position:fixed;top:calc(var(--header-h) + var(--tab-h));bottom:0;left:0;right:0;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+}
+.page{display:none;min-height:100%;padding:16px 16px 90px;}
+.page.active{display:block;}
+@media (min-width:760px){ .page{max-width:720px;margin:0 auto;} }
+
+/* ============================================================
+   カード／タイトル
+   ============================================================ */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+.section-title{
+  font-size:12px;font-weight:800;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.08em;margin:4px 2px 10px;display:flex;align-items:center;gap:6px;
+}
+
+/* ============================================================
+   人物タブ（成長・健康共通）
+   ============================================================ */
+.person-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.person-tab{
+  padding:7px 16px;border-radius:22px;font-size:13px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+  transition:all .15s;
+}
+.person-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 3px 10px rgba(91,124,250,.3);}
+.person-tab .pt-age{font-size:10px;opacity:.75;font-weight:600;}
+
+/* ============================================================
+   サマリーチップ
+   ============================================================ */
+.summary-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.summary-chip{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:10px 14px;flex:1;min-width:74px;text-align:center;box-shadow:var(--shadow);
+}
+.summary-chip .sc-label{font-size:10px;color:var(--text3);font-weight:700;}
+.summary-chip .sc-val{font-size:19px;font-weight:800;color:var(--text);}
+.summary-chip .sc-unit{font-size:10px;color:var(--text3);font-weight:600;}
+.summary-chip .sc-sub{font-size:10px;color:var(--text3);margin-top:1px;}
+
+/* ============================================================
+   グラフ凡例トグル（取り消し線をやめてON/OFFチップ式に）
+   ============================================================ */
+.chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.legend-chip{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;
+  border:1.5px solid var(--border);background:var(--surface2);color:var(--text3);
+  transition:all .15s;
+}
+.legend-chip .lc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+/* 表示ON状態：色付き枠＋濃い文字、OFF状態：薄いグレー（取り消し線は使わない） */
+.legend-chip.on{background:var(--surface);color:var(--text);}
+.legend-chip.off{opacity:.45;}
+.legend-chip.off .lc-dot{background:var(--text3)!important;}
+.legend-chip .lc-eye{font-size:11px;}
+
+.chart-wrap{position:relative;width:100%;height:220px;margin-top:4px;}
+.chart-wrap canvas{width:100%!important;height:100%!important;}
+
+/* ============================================================
+   記録リスト（スワイプ削除）
+   ============================================================ */
+.record-list{display:flex;flex-direction:column;gap:8px;}
+.habit-swipe-wrap{position:relative;border-radius:var(--radius);overflow:hidden;}
+.habit-swipe-del{
+  position:absolute;right:0;top:0;bottom:0;width:80px;background:var(--red);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#fff;font-size:12px;font-weight:700;border-radius:0 var(--radius) var(--radius) 0;
+  pointer-events:none;opacity:0;transition:opacity .15s;cursor:pointer;line-height:1.3;
+}
+.habit-swipe-del.visible{opacity:1;pointer-events:auto;}
+.habit-swipe-wrap:hover .habit-hover-del{opacity:1;pointer-events:auto;}
+.habit-hover-del{
+  width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text3);font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:opacity .15s,background .12s,color .12s,border-color .12s;
+  pointer-events:none;flex-shrink:0;
+}
+.habit-hover-del:hover{background:var(--red-soft);color:var(--red);border-color:var(--red);}
+@media (hover:none){.habit-hover-del{display:none!important;}}
+
+.record-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;display:flex;align-items:center;gap:10px;
+}
+.record-item.deleted{opacity:.45;background:var(--surface2);}
+.record-date{font-size:12px;color:var(--text3);font-weight:700;min-width:74px;}
+.record-vals{flex:1;display:flex;flex-wrap:wrap;gap:8px 12px;}
+.record-val{display:flex;flex-direction:column;font-size:11px;color:var(--text3);font-weight:600;}
+.record-val span{font-size:15px;font-weight:800;color:var(--text);}
+.record-age{font-size:10px;color:var(--accent);background:var(--accent-soft);border-radius:10px;padding:2px 8px;align-self:flex-start;font-weight:700;}
+
+/* ============================================================
+   健康管理アイテム
+   ============================================================ */
+.health-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;display:flex;align-items:flex-start;gap:11px;
+}
+.health-icon{
+  width:34px;height:34px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:17px;flex-shrink:0;
+}
+.health-info{flex:1;min-width:0;}
+.health-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.health-name{font-weight:700;font-size:14px;}
+.health-cat{font-size:10px;border-radius:7px;padding:2px 7px;font-weight:700;}
+.health-meta{font-size:12px;color:var(--text3);margin-top:2px;}
+.health-body{font-size:13px;color:var(--text2);margin-top:3px;white-space:pre-wrap;word-break:break-word;}
+.health-status-badge{font-size:10px;border-radius:6px;padding:2px 7px;font-weight:700;}
+
+/* ============================================================
+   Excel風フィルターバー
+   ============================================================ */
+.filter-bar{
+  display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 12px;box-shadow:var(--shadow);
+}
+.filter-btn{
+  display:flex;align-items:center;gap:5px;
+  padding:6px 12px;border-radius:9px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+  transition:all .15s;
+}
+.filter-btn:hover{background:var(--border);}
+.filter-btn.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.filter-btn .fb-caret{font-size:9px;}
+.filter-count{font-size:11px;color:var(--text3);margin-left:auto;font-weight:600;}
+.filter-reset{font-size:11px;color:var(--accent);font-weight:700;}
+
+/* フィルターポップオーバー（Excelのオートフィルタ風） */
+.filter-pop{
+  position:fixed;z-index:600;
+  background:var(--surface);border:1px solid var(--border2);border-radius:14px;
+  box-shadow:var(--shadow2);padding:12px;min-width:220px;max-width:280px;
+  max-height:60vh;overflow-y:auto;display:none;
+}
+.filter-pop.open{display:block;}
+.filter-pop-title{font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.filter-check{
+  display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .12s;
+}
+.filter-check:hover{background:var(--surface2);}
+.filter-check input{width:17px;height:17px;accent-color:var(--accent);}
+.filter-pop-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.filter-pop-actions button{flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:700;}
+.fpa-clear{background:var(--surface2);color:var(--text2);border:1px solid var(--border);}
+.fpa-apply{background:var(--accent);color:#fff;}
+
+/* 期間フィルター入力 */
+.period-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+.period-row .form-input{flex:1;}
+.period-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.period-preset{
+  font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+}
+.period-preset.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+
+/* ============================================================
+   フォーム
+   ============================================================ */
+.form-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+.form-field{display:flex;flex-direction:column;gap:5px;min-width:80px;flex:1;}
+.form-field>label{font-size:11px;font-weight:700;color:var(--text3);}
+.form-input{
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;
+  background:var(--surface2);color:var(--text);transition:border-color .15s,background .15s;width:100%;
+}
+.form-input:focus{outline:none;border-color:var(--accent);background:var(--surface);}
+.form-input-wrap{position:relative;display:flex;align-items:center;}
+.form-input-wrap .form-input{padding-right:32px;}
+.btn-clear-field{
+  position:absolute;right:9px;width:19px;height:19px;border-radius:50%;
+  background:var(--text3);color:#fff;font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:opacity .15s;pointer-events:none;
+}
+.form-input-wrap:focus-within .btn-clear-field,
+.form-input-wrap.has-val .btn-clear-field{opacity:1;pointer-events:auto;}
+
+/* 年/月/日 独立セレクト（日付入力の誤操作対策） */
+.date-select-row{display:flex;gap:6px;align-items:center;}
+.date-select-row select{
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 6px;
+  background:var(--surface2);color:var(--text);flex:1;min-width:0;
+  text-align:center;text-align-last:center;
+}
+.date-select-row select:focus{outline:none;border-color:var(--accent);background:var(--surface);}
+.date-select-row .ds-sep{font-size:12px;color:var(--text3);font-weight:700;}
+.date-select-row select.ds-year{flex:1.4;}
+
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
+.btn-primary{
+  background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:10px 22px;
+  font-weight:700;font-size:14px;transition:background .15s,transform .1s;
+}
+.btn-primary:hover{background:var(--accent-dark);}
+.btn-primary:active{transform:scale(.97);}
+.btn-secondary{
+  background:var(--surface2);color:var(--text2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:10px 18px;font-weight:700;font-size:14px;
+}
+
+/* カテゴリ選択ピル */
+.cat-pills{display:flex;flex-wrap:wrap;gap:8px;}
+.cat-pill{
+  display:flex;align-items:center;gap:5px;padding:8px 14px;border-radius:11px;
+  font-size:13px;font-weight:700;background:var(--surface2);border:1.5px solid var(--border);
+  color:var(--text2);transition:all .15s;
+}
+.cat-pill.selected{transform:translateY(-1px);}
+
+/* ============================================================
+   FAB
+   ============================================================ */
+.fab{
+  position:fixed;right:20px;bottom:24px;z-index:200;width:56px;height:56px;
+  border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));
+  color:#fff;font-size:28px;font-weight:300;display:flex;align-items:center;
+  justify-content:center;box-shadow:var(--shadow2);transition:transform .1s;
+}
+.fab:active{transform:scale(.92);}
+.fab.hidden{display:none;}
+
+/* ============================================================
+   モーダル
+   ============================================================ */
+.modal-overlay{
+  position:fixed;inset:0;z-index:500;background:rgba(10,15,30,.5);
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;backdrop-filter:blur(2px);
+}
+.modal-overlay.open{opacity:1;pointer-events:auto;}
+.modal-sheet{
+  background:var(--surface);border-radius:22px 22px 0 0;width:100%;max-width:600px;
+  max-height:92dvh;overflow-y:auto;padding:20px 20px 40px;
+  transform:translateY(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+}
+.modal-overlay.open .modal-sheet{transform:translateY(0);}
+.modal-title{font-size:18px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px;}
+.modal-close{
+  margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--surface2);
+  display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text2);
+}
+
+/* 設定行 */
+.setting-row{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border);}
+.setting-row:last-child{border-bottom:none;}
+.setting-label{flex:1;font-size:14px;font-weight:700;}
+.setting-desc{font-size:12px;color:var(--text3);margin-top:2px;font-weight:500;}
+
+/* 設定ページ内のサブカード */
+.settings-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+
+/* ゴミ箱バー */
+.trash-bar{
+  display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--red-soft);
+  border:1px solid var(--red);border-radius:var(--radius);margin-bottom:12px;
+  font-size:13px;color:var(--red);font-weight:700;
+}
+.trash-bar .spacer{flex:1;}
+.btn-mini{font-size:12px;font-weight:700;border-radius:7px;padding:5px 11px;}
+.btn-mini.restore{color:var(--accent);background:var(--accent-soft);}
+.btn-mini.purge{color:var(--red);background:var(--surface);border:1px solid var(--red);}
+
+/* トースト */
+.toast{
+  position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:999;
+  background:var(--text);color:var(--surface);border-radius:22px;padding:11px 22px;
+  font-size:14px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;
+  box-shadow:var(--shadow2);max-width:90vw;
+}
+.toast.show{opacity:1;}
+
+/* 空状態 */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3);}
+.empty-state .es-icon{font-size:44px;margin-bottom:10px;}
+.empty-state .es-text{font-size:14px;font-weight:600;}
+
+/* 固定閉じるボタン */
+.fixed-close{
+  position:sticky;bottom:-40px;left:0;right:0;padding:12px 0 0;z-index:10;margin-top:8px;
+  background:linear-gradient(to bottom,transparent,var(--surface) 45%);
+  display:flex;justify-content:center;
+}
+.fixed-close button{
+  background:var(--surface2);border:1px solid var(--border);border-radius:22px;
+  padding:9px 28px;font-size:14px;font-weight:700;color:var(--text2);
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ ヘッダー ============================================================ -->
+<header class="header">
+  <div class="header-logo">
+    <div class="logo-mark">🌿</div>
+    <div class="logo-text">からだログ<small>KARADA LOG</small></div>
+  </div>
+  <button class="icon-btn btn-sync" id="btnSync" title="同期" onclick="App.sync()">⟳</button>
+  <button class="icon-btn btn-lock" id="btnLock" title="編集ロック" onclick="App.toggleLock()">🔓</button>
+  <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
+</header>
+
+<!-- ============================================================ タブ（3つ） ============================================================ -->
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="growth" onclick="App.switchTab('growth')">
+    <span class="tab-icon">📏</span>成長
+  </button>
+  <button class="tab-btn" data-tab="health" onclick="App.switchTab('health')">
+    <span class="tab-icon">🩺</span>健康管理
+  </button>
+  <button class="tab-btn" data-tab="settings" onclick="App.switchTab('settings')">
+    <span class="tab-icon">⚙️</span>設定
+  </button>
+</nav>
+
+<!-- ============================================================ メイン ============================================================ -->
+<main class="main" id="main">
+
+  <!-- === 成長タブ === -->
+  <div class="page active" id="page-growth">
+    <div class="person-tabs" id="growthPersonTabs"></div>
+    <div class="summary-bar" id="growthSummary"></div>
+    <div class="card" id="chartCard">
+      <div class="section-title" style="margin:0 0 10px">📈 成長グラフ</div>
+      <!-- 凡例トグル（ON/OFFチップ式） -->
+      <div class="chart-legend" id="chartLegend"></div>
+      <div class="chart-wrap"><canvas id="chartCanvas"></canvas></div>
+    </div>
+    <div class="section-title" style="margin-top:10px">📋 記録一覧</div>
+    <div class="record-list" id="growthList"></div>
+    <div class="empty-state" id="growthEmpty" style="display:none">
+      <div class="es-icon">📏</div><div class="es-text">記録がありません<br>＋ボタンから追加できます</div>
+    </div>
+  </div>
+
+  <!-- === 健康管理タブ（ワクチン統合） === -->
+  <div class="page" id="page-health">
+    <div class="person-tabs" id="healthPersonTabs"></div>
+    <!-- Excel風フィルターバー -->
+    <div class="filter-bar">
+      <button class="filter-btn" id="catFilterBtn" onclick="App.openCatFilter(event)">
+        🏷 カテゴリ<span class="fb-caret">▼</span>
+      </button>
+      <button class="filter-btn" id="periodFilterBtn" onclick="App.openPeriodFilter(event)">
+        📅 期間<span class="fb-caret">▼</span>
+      </button>
+      <button class="filter-reset" onclick="App.resetHealthFilters()">クリア</button>
+      <span class="filter-count" id="healthCount"></span>
+    </div>
+    <div class="record-list" id="healthList"></div>
+    <div class="empty-state" id="healthEmpty" style="display:none">
+      <div class="es-icon">🩺</div><div class="es-text">記録がありません</div>
+    </div>
+  </div>
+
+  <!-- === 設定タブ（ゴミ箱統合） === -->
+  <div class="page" id="page-settings">
+
+    <!-- 人物管理 -->
+    <div class="section-title">👥 人物管理</div>
+    <div class="settings-card">
+      <div id="personList"></div>
+      <div class="form-row" style="margin:12px 0 0">
+        <div class="form-field" style="flex:1.3">
+          <label>名前</label>
+          <div class="form-input-wrap" id="wrap_pname">
+            <input type="text" class="form-input" id="newPersonName" placeholder="名前を入力"
+              oninput="App.fieldUpdate('pname')">
+            <button class="btn-clear-field" onclick="App.clearField('newPersonName','pname')">✕</button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:1.6">
+          <label>生年月日</label>
+          <div class="date-select-row" id="newPersonBirthRow"></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="App.addPerson()">＋ 人物を追加</button>
+      </div>
+    </div>
+
+    <!-- GAS連携 -->
+    <div class="section-title">🔗 GAS連携</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:8px">Google Apps Script のデプロイ済みURLを登録すると同期できます。</div>
+      <div class="form-input-wrap" id="wrap_gas">
+        <input type="url" class="form-input" id="gasUrl" placeholder="https://script.google.com/macros/s/..."
+          oninput="App.fieldUpdate('gas')">
+        <button class="btn-clear-field" onclick="App.clearField('gasUrl','gas')">✕</button>
+      </div>
+    </div>
+
+    <!-- データ管理 -->
+    <div class="section-title">💾 データ</div>
+    <div class="settings-card">
+      <div class="setting-row">
+        <div><div class="setting-label">JSONインポート</div><div class="setting-desc">対象の人物を選んで取り込みます</div></div>
+        <input type="file" accept=".json" id="importFile" style="display:none" onchange="App.importJSON(event)">
+        <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 読込</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">JSONエクスポート</div>
+        <button class="btn-secondary" onclick="App.exportJSON()">💾 保存</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label" style="color:var(--red)">全データ削除</div>
+        <button class="btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="App.clearAllData()">🗑 削除</button>
+      </div>
+    </div>
+
+    <!-- ゴミ箱（旧タブを統合） -->
+    <div class="section-title">🗑 ゴミ箱</div>
+    <div class="trash-bar" id="trashBar" style="display:none">
+      <span>一時削除中</span><span class="spacer"></span>
+      <button class="btn-mini restore" onclick="App.restoreAll()">全て復元</button>
+      <button class="btn-mini purge" onclick="App.purgeAll()">全て完全削除</button>
+    </div>
+    <div class="record-list" id="trashList"></div>
+    <div class="empty-state" id="trashEmpty" style="padding:24px"><div class="es-icon" style="font-size:32px">✨</div><div class="es-text">ゴミ箱は空です</div></div>
+
+  </div>
+
+</main>
+
+<!-- FAB -->
+<button class="fab" id="fab" onclick="App.openAddModal()">＋</button>
+
+<!-- ============================================================ 成長記録モーダル ============================================================ -->
+<div class="modal-overlay" id="modalGrowth">
+  <div class="modal-sheet">
+    <div class="modal-title">📏 成長記録を追加<button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>日付</label>
+        <div class="date-select-row" id="growthDateRow"></div>
+      </div>
+    </div>
+    <!-- 月齢/年齢は誕生日から自動算出して表示（手入力なし） -->
+    <div style="font-size:12px;color:var(--accent);font-weight:700;margin:-4px 2px 12px" id="growthAgePreview"></div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>身長 (cm)</label>
+        <div class="form-input-wrap" id="wrap_gheight">
+          <input type="number" inputmode="decimal" class="form-input" id="g_height" step="0.1" min="0" max="250" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('gheight')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_height','gheight')">✕</button>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>体重 (kg)</label>
+        <div class="form-input-wrap" id="wrap_gweight">
+          <input type="number" inputmode="decimal" class="form-input" id="g_weight" step="0.01" min="0" max="300" placeholder="0.00"
+            onfocus="this.select()" oninput="App.fieldUpdate('gweight')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_weight','gweight')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>胸囲 (cm)</label>
+        <div class="form-input-wrap" id="wrap_gchest">
+          <input type="number" inputmode="decimal" class="form-input" id="g_chest" step="0.1" min="0" max="200" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('gchest')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_chest','gchest')">✕</button>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>頭囲 (cm)</label>
+        <div class="form-input-wrap" id="wrap_ghead">
+          <input type="number" inputmode="decimal" class="form-input" id="g_head" step="0.1" min="0" max="100" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('ghead')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_head','ghead')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>メモ</label>
+        <div class="form-input-wrap" id="wrap_gnote">
+          <input type="text" class="form-input" id="g_note" placeholder="任意のメモ"
+            oninput="App.fieldUpdate('gnote')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_note','gnote')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalGrowth')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveGrowth()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ 健康管理モーダル（ワクチン含む） ============================================================ -->
+<div class="modal-overlay" id="modalHealth">
+  <div class="modal-sheet">
+    <div class="modal-title">🩺 健康記録を追加<button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
+    <!-- カテゴリ選択 -->
+    <div class="form-field" style="margin-bottom:14px">
+      <label>カテゴリ</label>
+      <div class="cat-pills" id="healthCatPills"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label id="healthNameLabel">項目名</label>
+        <div class="form-input-wrap" id="wrap_hname">
+          <input type="text" class="form-input" id="h_name" placeholder="例: インフルエンザ予防接種"
+            oninput="App.fieldUpdate('hname')" onkeydown="App.formKeyDown(event,'modalHealth')">
+          <button class="btn-clear-field" onclick="App.clearField('h_name','hname')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>日付</label>
+        <div class="date-select-row" id="healthDateRow"></div>
+      </div>
+    </div>
+    <!-- ワクテン用のステータス・回数（カテゴリ=ワクチンの時のみ表示） -->
+    <div class="form-row" id="vaccineFields" style="display:none">
+      <div class="form-field">
+        <label>状態</label>
+        <select class="form-input" id="h_status">
+          <option value="done">接種済み ✅</option>
+          <option value="scheduled">予定 📅</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>回数目</label>
+        <div class="form-input-wrap" id="wrap_hdose">
+          <input type="number" inputmode="numeric" class="form-input" id="h_dose" min="1" max="20" placeholder="1"
+            onfocus="this.select()" oninput="App.fieldUpdate('hdose')" onkeydown="App.formKeyDown(event,'modalHealth')">
+          <button class="btn-clear-field" onclick="App.clearField('h_dose','hdose')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>内容・備考</label>
+        <div class="form-input-wrap" id="wrap_hbody">
+          <textarea class="form-input" id="h_body" rows="3" style="resize:vertical" placeholder="症状・経過・医院名など..."
+            oninput="App.fieldUpdate('hbody')" onkeydown="App.healthBodyKeyDown(event)"></textarea>
+          <button class="btn-clear-field" style="top:9px" onclick="App.clearField('h_body','hbody')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalHealth')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveHealth()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ インポート対象選択モーダル ============================================================ -->
+<div class="modal-overlay" id="modalImport">
+  <div class="modal-sheet">
+    <div class="modal-title">📂 インポート先を選択<button class="modal-close" onclick="App.closeModal('modalImport')">✕</button></div>
+    <div class="setting-desc" style="margin-bottom:14px" id="importDesc"></div>
+    <div id="importMapping"></div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalImport')">キャンセル</button>
+      <button class="btn-primary" onclick="App.confirmImport()">取り込む</button>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリフィルターポップオーバー -->
+<div class="filter-pop" id="catFilterPop">
+  <div class="filter-pop-title">カテゴリで絞り込み</div>
+  <div id="catFilterChecks"></div>
+  <div class="filter-pop-actions">
+    <button class="fpa-clear" onclick="App.catFilterSelectAll()">全選択</button>
+    <button class="fpa-apply" onclick="App.applyCatFilter()">適用</button>
+  </div>
+</div>
+
+<!-- 期間フィルターポップオーバー -->
+<div class="filter-pop" id="periodFilterPop">
+  <div class="filter-pop-title">期間で絞り込み</div>
+  <div class="period-presets" id="periodPresets"></div>
+  <div class="period-row">
+    <input type="month" class="form-input" id="periodFrom">
+    <span style="color:var(--text3)">〜</span>
+    <input type="month" class="form-input" id="periodTo">
+  </div>
+  <div class="filter-pop-actions">
+    <button class="fpa-clear" onclick="App.clearPeriodFilter()">クリア</button>
+    <button class="fpa-apply" onclick="App.applyPeriodFilter()">適用</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+/* ============================================================
+  からだログ メインアプリ
+  ============================================================ */
+const App = (() => {
+
+  /* ── データ構造 ──
+     persons:       [{id,name,birthDate}]
+     growth:        [{id,personId,date,height,weight,chestCirc,headCirc,bmi,note,deleted,deletedAt}]
+     healthRecords: [{id,personId,date,category,name,body,status,dose,deleted,deletedAt}]  ← ワクチン含む */
+  let data = {
+    persons: [],
+    growth: [],
+    healthRecords: [],
+    settings: { gasUrl:'', darkMode:false, locked:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
+  };
+
+  /* ── UI状態 ── */
+  let currentTab = 'growth';
+  let currentPersonId = null;       // 成長タブの選択人物
+  let healthPersonId = 'all';       // 健康タブの選択人物
+  let chart = null;
+  let scrollPositions = {};
+  // 健康フィルター状態
+  let healthCatFilter = null;       // null=全て / Set(カテゴリ名)
+  let healthPeriod = { from:null, to:null };
+  let pendingImport = null;         // インポート保留データ
+
+  const LS_KEY = 'karadaLogData';
+
+  /* 健康カテゴリ定義（ワクチンもここに含める） */
+  const CATEGORIES = [
+    { key:'ワクチン', icon:'💉', color:'teal' },
+    { key:'通院',     icon:'🏥', color:'accent' },
+    { key:'症状',     icon:'🤒', color:'red' },
+    { key:'薬',       icon:'💊', color:'purple' },
+    { key:'検査',     icon:'🔬', color:'orange' },
+    { key:'発達',     icon:'🌱', color:'green' },
+    { key:'その他',   icon:'📌', color:'pink' },
+  ];
+  const catMeta = k => CATEGORIES.find(c => c.key === k) || CATEGORIES[CATEGORIES.length-1];
+
+  /* ============================================================ 初期化 ============================================================ */
+  function init(){
+    loadData();
+    applyDarkMode();
+    applyLock();
+    buildDateSelects();           // 各日付セレクトを構築
+    buildHealthCatPills();        // モーダルのカテゴリピル
+    renderPersonTabs();
+    renderGrowthList();
+    renderHealthList();
+    renderTrash();
+    renderPersonList();
+    document.getElementById('gasUrl').value = data.settings.gasUrl || '';
+    fieldUpdate('gas');
+    // ポップオーバー外クリックで閉じる
+    document.addEventListener('click', e => {
+      if(!e.target.closest('.filter-pop') && !e.target.closest('.filter-btn')){
+        closeAllPops();
+      }
+    });
+  }
+
+  /* ============================================================ 保存/読込 ============================================================ */
+  function saveData(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){ showToast('保存失敗:容量不足'); } }
+  function loadData(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(raw){
+        const p = JSON.parse(raw);
+        data.persons = p.persons || [];
+        data.growth = p.growth || [];
+        data.healthRecords = p.healthRecords || [];
+        data.settings = Object.assign(data.settings, p.settings || {});
+        if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
+      }
+    }catch(e){ console.error(e); }
+  }
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  /* ============================================================ 年齢・月齢の自動算出 ============================================================
+     誕生日(birthDate)と対象日(targetDate)から「○歳○ヵ月」を計算 */
+  function calcAge(birthDate, targetDate){
+    if(!birthDate || !targetDate) return '';
+    const b = new Date(birthDate), t = new Date(targetDate);
+    if(isNaN(b) || isNaN(t) || t < b) return '';
+    let years = t.getFullYear() - b.getFullYear();
+    let months = t.getMonth() - b.getMonth();
+    let days = t.getDate() - b.getDate();
+    if(days < 0) months--;
+    if(months < 0){ years--; months += 12; }
+    if(years === 0) return months + 'ヵ月';
+    return years + '歳' + months + 'ヵ月';
+  }
+
+  /* ============================================================ ダーク/ロック ============================================================ */
+  function toggleDark(){ data.settings.darkMode = !data.settings.darkMode; applyDarkMode(); saveData(); }
+  function applyDarkMode(){
+    document.body.classList.toggle('dark', !!data.settings.darkMode);
+    document.getElementById('btnMode').textContent = data.settings.darkMode ? '☀️' : '🌙';
+    if(chart) renderChart();
+  }
+  function toggleLock(){ data.settings.locked = !data.settings.locked; applyLock(); saveData(); }
+  function applyLock(){
+    const l = !!data.settings.locked;
+    const b = document.getElementById('btnLock');
+    b.textContent = l ? '🔒' : '🔓';
+    b.classList.toggle('locked', l);
+    document.getElementById('fab').classList.toggle('hidden', l);
+  }
+
+  /* ============================================================ タブ切替（スクロール位置維持） ============================================================ */
+  function switchTab(tab){
+    scrollPositions[currentTab] = document.getElementById('main').scrollTop;
+    currentTab = tab;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-'+tab).classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    // FAB: 設定タブでは隠す
+    document.getElementById('fab').classList.toggle('hidden', tab === 'settings' || data.settings.locked);
+    requestAnimationFrame(() => { document.getElementById('main').scrollTop = scrollPositions[tab] || 0; });
+    if(tab === 'growth') renderChart();
+  }
+
+  /* ============================================================ 日付セレクト構築（年/月/日 独立） ============================================================
+     年は誤入力を防ぐためセレクト固定、月・日も独立。移動誤操作なし。 */
+  function buildDateSelects(){
+    const thisYear = new Date().getFullYear();
+    // 生年月日は過去120年〜今年、記録日は過去30年〜来年
+    buildDateRow('newPersonBirthRow', 'pb', thisYear-120, thisYear, true);
+    buildDateRow('growthDateRow', 'gd', thisYear-30, thisYear+1, false);
+    buildDateRow('healthDateRow', 'hd', thisYear-30, thisYear+1, false);
+  }
+  /* 1組の年/月/日セレクトを生成。prefixでid識別。isBirth=trueは初期空（生年月日を入力） */
+  function buildDateRow(rowId, prefix, yearStart, yearEnd, isBirth){
+    const row = document.getElementById(rowId);
+    if(!row) return;
+    const today = new Date();
+    // 年
+    let yearOpts = isBirth ? '<option value="">年</option>' : '';
+    for(let y=yearEnd; y>=yearStart; y--) yearOpts += `<option value="${y}">${y}年</option>`;
+    // 月
+    let monthOpts = isBirth ? '<option value="">月</option>' : '';
+    for(let m=1; m<=12; m++) monthOpts += `<option value="${m}">${m}月</option>`;
+    // 日
+    let dayOpts = isBirth ? '<option value="">日</option>' : '';
+    for(let d=1; d<=31; d++) dayOpts += `<option value="${d}">${d}日</option>`;
+
+    row.innerHTML = `
+      <select class="ds-year" id="${prefix}_year" onchange="App.onDateChange('${prefix}')">${yearOpts}</select>
+      <select id="${prefix}_month" onchange="App.onDateChange('${prefix}')">${monthOpts}</select>
+      <select id="${prefix}_day" onchange="App.onDateChange('${prefix}')">${dayOpts}</select>
+    `;
+    // 記録日系はデフォルト今日
+    if(!isBirth){
+      row.querySelector(`#${prefix}_year`).value = today.getFullYear();
+      row.querySelector(`#${prefix}_month`).value = today.getMonth()+1;
+      row.querySelector(`#${prefix}_day`).value = today.getDate();
+    }
+  }
+  /* セレクトから ISO日付文字列(YYYY-MM-DD)を取得。未選択ならnull */
+  function getDateFromRow(prefix){
+    const y = document.getElementById(prefix+'_year')?.value;
+    const m = document.getElementById(prefix+'_month')?.value;
+    const d = document.getElementById(prefix+'_day')?.value;
+    if(!y || !m || !d) return null;
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  /* ISO日付をセレクトにセット */
+  function setDateToRow(prefix, iso){
+    if(!iso) return;
+    const [y,m,d] = iso.split('-').map(Number);
+    const ye=document.getElementById(prefix+'_year'), me=document.getElementById(prefix+'_month'), de=document.getElementById(prefix+'_day');
+    if(ye) ye.value=y; if(me) me.value=m; if(de) de.value=d;
+  }
+  /* 日付変更時：成長モーダルなら月齢プレビュー更新 */
+  function onDateChange(prefix){
+    if(prefix === 'gd') updateGrowthAgePreview();
+  }
+  /* 成長モーダルの月齢プレビュー（誕生日から自動算出） */
+  function updateGrowthAgePreview(){
+    const el = document.getElementById('growthAgePreview');
+    const person = data.persons.find(p => p.id === currentPersonId);
+    const date = getDateFromRow('gd');
+    if(person && person.birthDate && date){
+      const age = calcAge(person.birthDate, date);
+      el.textContent = age ? `👤 ${person.name} ・ ${age}` : (person.name || '');
+    }else if(person){
+      el.textContent = person.birthDate ? '' : `👤 ${person.name}（誕生日未設定のため月齢は表示されません）`;
+    }else{
+      el.textContent = '';
+    }
+  }
+
+  /* ============================================================ 人物タブ描画（イベント再バインド方式で確実に動作） ============================================================ */
+  function renderPersonTabs(){
+    if(!currentPersonId && data.persons.length>0) currentPersonId = data.persons[0].id;
+
+    // 成長タブの人物切替（全員ボタンは無し＝1人ずつグラフ表示）
+    const gEl = document.getElementById('growthPersonTabs');
+    gEl.innerHTML='';
+    if(data.persons.length===0){
+      gEl.innerHTML='<span style="font-size:13px;color:var(--text3)">設定タブから人物を追加してください</span>';
+    }else{
+      data.persons.forEach(p=>{
+        const btn=document.createElement('button');
+        btn.className='person-tab'+(currentPersonId===p.id?' active':'');
+        const latestDate = latestGrowthDate(p.id);
+        const ageStr = (p.birthDate && latestDate) ? calcAge(p.birthDate, latestDate) : '';
+        btn.innerHTML = `${escHtml(p.name)}${ageStr?`<span class="pt-age"> ${ageStr}</span>`:''}`;
+        // onclickを直接バインド（不具合修正：addEventListenerで確実に）
+        btn.addEventListener('click', ()=>{
+          currentPersonId = p.id;
+          renderPersonTabs();
+          renderGrowthList();
+          renderChart();
+        });
+        gEl.appendChild(btn);
+      });
+    }
+
+    // 健康タブの人物切替（全員＋各人物）
+    const hEl = document.getElementById('healthPersonTabs');
+    hEl.innerHTML='';
+    if(data.persons.length>0){
+      const allBtn=document.createElement('button');
+      allBtn.className='person-tab'+(healthPersonId==='all'?' active':'');
+      allBtn.textContent='全員';
+      allBtn.addEventListener('click', ()=>{ healthPersonId='all'; renderPersonTabs(); renderHealthList(); });
+      hEl.appendChild(allBtn);
+      data.persons.forEach(p=>{
+        const btn=document.createElement('button');
+        btn.className='person-tab'+(healthPersonId===p.id?' active':'');
+        btn.textContent=p.name;
+        btn.addEventListener('click', ()=>{ healthPersonId=p.id; renderPersonTabs(); renderHealthList(); });
+        hEl.appendChild(btn);
+      });
+    }
+  }
+
+  /* ある人物の最新成長記録日 */
+  function latestGrowthDate(personId){
+    const recs = data.growth.filter(r=>!r.deleted && r.personId===personId);
+    if(recs.length===0) return null;
+    return recs.reduce((a,b)=> a.date>b.date?a:b).date;
+  }
+
+  /* ============================================================ 成長リスト・サマリー ============================================================ */
+  function renderGrowthList(){
+    let records = data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
+    records.sort((a,b)=>b.date.localeCompare(a.date));
+    const list=document.getElementById('growthList');
+    const empty=document.getElementById('growthEmpty');
+    list.innerHTML='';
+    if(records.length===0){
+      empty.style.display=''; renderSummary([]); renderLegend(); renderChart();
+      return;
+    }
+    empty.style.display='none';
+    renderSummary(records);
+    renderLegend();
+    renderChart();
+    const person=data.persons.find(p=>p.id===currentPersonId);
+    records.forEach(r=> list.appendChild(buildGrowthItem(r, person)));
+  }
+
+  function buildGrowthItem(r, person){
+    const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+    const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+    del.addEventListener('click',()=>softDelete('growth',r.id));
+    const ageStr=(person&&person.birthDate)?calcAge(person.birthDate, r.date):'';
+    const item=document.createElement('div'); item.className='record-item';
+    item.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
+        <div class="record-date">${r.date}</div>
+        ${ageStr?`<div class="record-age">${ageStr}</div>`:''}
+      </div>
+      <div class="record-vals">
+        ${r.height!=null?`<div class="record-val"><span>${r.height}</span>身長cm</div>`:''}
+        ${r.weight!=null?`<div class="record-val"><span>${r.weight}</span>体重kg</div>`:''}
+        ${r.bmi!=null?`<div class="record-val"><span>${r.bmi}</span>BMI</div>`:''}
+        ${r.chestCirc!=null?`<div class="record-val"><span>${r.chestCirc}</span>胸囲cm</div>`:''}
+        ${r.headCirc!=null?`<div class="record-val"><span>${r.headCirc}</span>頭囲cm</div>`:''}
+      </div>
+      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
+      <button class="habit-hover-del">✕</button>
+    `;
+    item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('growth',r.id));
+    attachSwipe(wrap, del, ()=>softDelete('growth',r.id));
+    wrap.appendChild(del); wrap.appendChild(item);
+    return wrap;
+  }
+
+  function renderSummary(records){
+    const el=document.getElementById('growthSummary'); el.innerHTML='';
+    if(records.length===0) return;
+    const latest=records[0];
+    [
+      {label:'身長',val:latest.height,unit:'cm'},
+      {label:'体重',val:latest.weight,unit:'kg'},
+      {label:'BMI',val:latest.bmi,unit:''},
+      {label:'胸囲',val:latest.chestCirc,unit:'cm'},
+      {label:'頭囲',val:latest.headCirc,unit:'cm'},
+    ].filter(c=>c.val!=null).forEach(c=>{
+      const chip=document.createElement('div'); chip.className='summary-chip';
+      chip.innerHTML=`<div class="sc-label">${c.label}</div><div class="sc-val">${c.val}<span class="sc-unit">${c.unit}</span></div><div class="sc-sub">${latest.date}</div>`;
+      el.appendChild(chip);
+    });
+  }
+
+  /* ============================================================ グラフ凡例（ON/OFFチップ式：取り消し線を使わない） ============================================================ */
+  function renderLegend(){
+    const el=document.getElementById('chartLegend'); el.innerHTML='';
+    const metrics=[
+      {key:'height',label:'身長',color:'#5b7cfa'},
+      {key:'weight',label:'体重',color:'#22b765'},
+      {key:'chestCirc',label:'胸囲',color:'#f0980b'},
+      {key:'headCirc',label:'頭囲',color:'#9c5cf5'},
+    ];
+    metrics.forEach(m=>{
+      const on=!!data.settings.chartVisible[m.key];
+      const chip=document.createElement('button');
+      chip.className='legend-chip '+(on?'on':'off');
+      // ON/OFFは目アイコンで明示（取り消し線ではなく）
+      chip.innerHTML=`<span class="lc-dot" style="background:${m.color}"></span>${m.label}<span class="lc-eye">${on?'👁':'🚫'}</span>`;
+      chip.addEventListener('click',()=>{
+        data.settings.chartVisible[m.key]=!data.settings.chartVisible[m.key];
+        saveData();
+        renderLegend();
+        renderChart();
+      });
+      el.appendChild(chip);
+    });
+  }
+
+  /* ============================================================ グラフ描画 ============================================================ */
+  function renderChart(){
+    let recs=data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
+    recs.sort((a,b)=>a.date.localeCompare(b.date));
+    const ctx=document.getElementById('chartCanvas');
+    if(!ctx) return;
+    if(chart){ chart.destroy(); chart=null; }
+    if(recs.length===0) return;
+
+    const isDark=data.settings.darkMode;
+    const textColor=isDark?'#9aa0be':'#4a5068';
+    const gridColor=isDark?'#2a2f44':'#e8ebf3';
+    const labels=recs.map(r=>r.date.slice(2)); // YY-MM-DD
+
+    const vis=data.settings.chartVisible;
+    const datasets=[];
+    // 身長（左軸）
+    if(vis.height) datasets.push({label:'身長(cm)',data:recs.map(r=>r.height),borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5});
+    // 体重（右軸）
+    if(vis.weight) datasets.push({label:'体重(kg)',data:recs.map(r=>r.weight),borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
+    // 胸囲（左軸）
+    if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:recs.map(r=>r.chestCirc),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    // 頭囲（左軸）
+    if(vis.headCirc) datasets.push({label:'頭囲(cm)',data:recs.map(r=>r.headCirc),borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+
+    chart=new Chart(ctx,{
+      type:'line',
+      data:{labels,datasets},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{display:false} },  // 凡例はカスタムチップで代替
+        scales:{
+          x:{ticks:{color:textColor,maxRotation:50,font:{size:9}},grid:{color:gridColor}},
+          y:{position:'left',ticks:{color:textColor,font:{size:10}},grid:{color:gridColor},title:{display:true,text:'身長/囲(cm)',color:textColor,font:{size:10}}},
+          y2:{position:'right',ticks:{color:'#22b765',font:{size:10}},grid:{drawOnChartArea:false},title:{display:true,text:'体重(kg)',color:'#22b765',font:{size:10}}}
+        }
+      }
+    });
+  }
+
+  /* ============================================================ 健康リスト（フィルター適用） ============================================================ */
+  function renderHealthList(){
+    let records=data.healthRecords.filter(r=>!r.deleted);
+    // 人物フィルター
+    if(healthPersonId!=='all') records=records.filter(r=>r.personId===healthPersonId);
+    // カテゴリフィルター
+    if(healthCatFilter && healthCatFilter.size>0 && healthCatFilter.size<CATEGORIES.length){
+      records=records.filter(r=>healthCatFilter.has(r.category));
+    }
+    // 期間フィルター（YYYY-MM単位）
+    if(healthPeriod.from) records=records.filter(r=> (r.date||'').slice(0,7) >= healthPeriod.from);
+    if(healthPeriod.to) records=records.filter(r=> (r.date||'').slice(0,7) <= healthPeriod.to);
+    // 並び: 予定を上に、日付降順
+    records.sort((a,b)=>{
+      const ap=a.status==='scheduled'?0:1, bp=b.status==='scheduled'?0:1;
+      if(ap!==bp) return ap-bp;
+      return (b.date||'').localeCompare(a.date||'');
+    });
+
+    // フィルター状態のボタン見た目更新
+    document.getElementById('catFilterBtn').classList.toggle('active', !!(healthCatFilter && healthCatFilter.size<CATEGORIES.length));
+    document.getElementById('periodFilterBtn').classList.toggle('active', !!(healthPeriod.from||healthPeriod.to));
+    document.getElementById('healthCount').textContent = `${records.length}件`;
+
+    const list=document.getElementById('healthList');
+    const empty=document.getElementById('healthEmpty');
+    list.innerHTML='';
+    if(records.length===0){ empty.style.display=''; return; }
+    empty.style.display='none';
+
+    records.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      const cm=catMeta(r.category);
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+      del.addEventListener('click',()=>softDelete('healthRecords',r.id));
+      const item=document.createElement('div'); item.className='health-item';
+      const ageStr=(person&&person.birthDate&&r.date)?calcAge(person.birthDate,r.date):'';
+      const statusBadge = r.category==='ワクチン'
+        ? (r.status==='scheduled'
+            ? `<span class="health-status-badge" style="background:var(--orange-soft);color:var(--orange)">予定</span>`
+            : `<span class="health-status-badge" style="background:var(--green-soft);color:var(--green)">接種済</span>`)
+        : '';
+      item.innerHTML=`
+        <div class="health-icon" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon}</div>
+        <div class="health-info">
+          <div class="health-title-row">
+            <span class="health-name">${escHtml(r.name||r.category)}${r.dose?` <span style="font-size:11px;color:var(--text3)">${r.dose}回目</span>`:''}</span>
+            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${r.category}</span>
+            ${statusBadge}
+          </div>
+          <div class="health-meta">${r.date||'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
+          ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
+        </div>
+        <button class="habit-hover-del">✕</button>
+      `;
+      item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('healthRecords',r.id));
+      attachSwipe(wrap, del, ()=>softDelete('healthRecords',r.id));
+      wrap.appendChild(del); wrap.appendChild(item);
+      list.appendChild(wrap);
+    });
+  }
+
+  /* ============================================================ Excel風フィルター ============================================================ */
+  function closeAllPops(){ document.querySelectorAll('.filter-pop').forEach(p=>p.classList.remove('open')); }
+
+  /* ポップオーバーをボタン下に配置 */
+  function positionPop(pop, btn){
+    const r=btn.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth-300) + 'px';
+    pop.style.top = (r.bottom+6) + 'px';
+  }
+
+  function openCatFilter(e){
+    e.stopPropagation();
+    closeAllPops();
+    const pop=document.getElementById('catFilterPop');
+    const checks=document.getElementById('catFilterChecks');
+    // 現在の選択（null=全選択扱い）
+    const selected = healthCatFilter || new Set(CATEGORIES.map(c=>c.key));
+    checks.innerHTML='';
+    CATEGORIES.forEach(c=>{
+      const lbl=document.createElement('label'); lbl.className='filter-check';
+      lbl.innerHTML=`<input type="checkbox" value="${c.key}" ${selected.has(c.key)?'checked':''}> ${c.icon} ${c.key}`;
+      checks.appendChild(lbl);
+    });
+    positionPop(pop, e.currentTarget);
+    pop.classList.add('open');
+  }
+  function catFilterSelectAll(){
+    document.querySelectorAll('#catFilterChecks input').forEach(i=>i.checked=true);
+  }
+  function applyCatFilter(){
+    const checked=[...document.querySelectorAll('#catFilterChecks input:checked')].map(i=>i.value);
+    healthCatFilter = checked.length===CATEGORIES.length ? null : new Set(checked);
+    closeAllPops();
+    renderHealthList();
+  }
+
+  function openPeriodFilter(e){
+    e.stopPropagation();
+    closeAllPops();
+    const pop=document.getElementById('periodFilterPop');
+    // プリセット
+    const presets=document.getElementById('periodPresets');
+    const now=new Date();
+    const ym=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const presetList=[
+      {label:'今年',from:`${now.getFullYear()}-01`,to:`${now.getFullYear()}-12`},
+      {label:'直近1年',from:ym(new Date(now.getFullYear()-1,now.getMonth())),to:ym(now)},
+      {label:'直近3ヶ月',from:ym(new Date(now.getFullYear(),now.getMonth()-2)),to:ym(now)},
+    ];
+    presets.innerHTML='';
+    presetList.forEach(p=>{
+      const btn=document.createElement('button'); btn.className='period-preset'; btn.textContent=p.label;
+      btn.addEventListener('click',()=>{
+        document.getElementById('periodFrom').value=p.from;
+        document.getElementById('periodTo').value=p.to;
+      });
+      presets.appendChild(btn);
+    });
+    document.getElementById('periodFrom').value=healthPeriod.from||'';
+    document.getElementById('periodTo').value=healthPeriod.to||'';
+    positionPop(pop, e.currentTarget);
+    pop.classList.add('open');
+  }
+  function applyPeriodFilter(){
+    healthPeriod.from=document.getElementById('periodFrom').value||null;
+    healthPeriod.to=document.getElementById('periodTo').value||null;
+    closeAllPops();
+    renderHealthList();
+  }
+  function clearPeriodFilter(){
+    healthPeriod={from:null,to:null};
+    document.getElementById('periodFrom').value='';
+    document.getElementById('periodTo').value='';
+    closeAllPops();
+    renderHealthList();
+  }
+  function resetHealthFilters(){
+    healthCatFilter=null; healthPeriod={from:null,to:null};
+    renderHealthList();
+  }
+
+  /* ============================================================ 削除（2段階） ============================================================ */
+  function softDelete(type,id){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    const rec=data[type].find(r=>r.id===id); if(!rec) return;
+    rec.deleted=true; rec.deletedAt=new Date().toISOString();
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash();
+    showToast('削除しました（設定→ゴミ箱から復元可）');
+  }
+  function restoreItem(type,id){
+    const rec=data[type].find(r=>r.id===id); if(!rec) return;
+    delete rec.deleted; delete rec.deletedAt;
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('復元しました');
+  }
+  function purgeItem(type,id){
+    data[type]=data[type].filter(r=>r.id!==id); saveData(); renderTrash(); showToast('完全に削除しました');
+  }
+  function restoreAll(){
+    ['growth','healthRecords'].forEach(t=>data[t].forEach(r=>{if(r.deleted){delete r.deleted;delete r.deletedAt;}}));
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全て復元しました');
+  }
+  function purgeAll(){
+    if(!confirm('ゴミ箱を空にします。元に戻せません。')) return;
+    ['growth','healthRecords'].forEach(t=>data[t]=data[t].filter(r=>!r.deleted));
+    saveData(); renderTrash(); showToast('完全削除しました');
+  }
+
+  function renderTrash(){
+    const all=[
+      ...data.growth.filter(r=>r.deleted).map(r=>({...r,_type:'growth',_label:'成長'})),
+      ...data.healthRecords.filter(r=>r.deleted).map(r=>({...r,_type:'healthRecords',_label:'健康'})),
+    ].sort((a,b)=>(b.deletedAt||'').localeCompare(a.deletedAt||''));
+    const list=document.getElementById('trashList');
+    const empty=document.getElementById('trashEmpty');
+    const bar=document.getElementById('trashBar');
+    list.innerHTML='';
+    if(all.length===0){ empty.style.display=''; bar.style.display='none'; return; }
+    empty.style.display='none'; bar.style.display='';
+    all.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      const desc=r._type==='growth'
+        ? `身長:${r.height??'-'} 体重:${r.weight??'-'}`
+        : `${r.category}: ${r.name||r.body||''}`.slice(0,40);
+      const item=document.createElement('div'); item.className='record-item deleted';
+      item.innerHTML=`
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--text3)">${r._label} ${r.date||''} ${person?'・'+escHtml(person.name):''}</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(desc)}</div>
+        </div>
+        <button class="btn-mini restore">復元</button>
+        <button class="btn-mini purge">完全削除</button>
+      `;
+      const btns=item.querySelectorAll('button');
+      btns[0].addEventListener('click',()=>restoreItem(r._type,r.id));
+      btns[1].addEventListener('click',()=>purgeItem(r._type,r.id));
+      list.appendChild(item);
+    });
+  }
+
+  /* ============================================================ モーダル ============================================================ */
+  function openModal(id){
+    const el=document.getElementById(id); el.classList.add('open');
+    setTimeout(()=>{ const f=el.querySelector('input:not([type=hidden]),textarea'); }, 280);
+  }
+  function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+
+  function openAddModal(){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
+    if(currentTab==='growth'){ resetGrowthForm(); updateGrowthAgePreview(); openModal('modalGrowth'); }
+    else if(currentTab==='health'){ resetHealthForm(); openModal('modalHealth'); }
+  }
+
+  function resetGrowthForm(){
+    ['g_height','g_weight','g_chest','g_head','g_note'].forEach(id=>document.getElementById(id).value='');
+    const t=new Date();
+    setDateToRow('gd', t.toISOString().slice(0,10));
+    ['gheight','gweight','gchest','ghead','gnote'].forEach(fieldUpdate);
+  }
+
+  /* ============================================================ 健康モーダル カテゴリピル ============================================================ */
+  let selectedCat='ワクチン';
+  function buildHealthCatPills(){
+    const el=document.getElementById('healthCatPills'); el.innerHTML='';
+    CATEGORIES.forEach(c=>{
+      const pill=document.createElement('button');
+      pill.className='cat-pill'+(c.key===selectedCat?' selected':'');
+      pill.style.cssText = c.key===selectedCat
+        ? `background:var(--${c.color}-soft);border-color:var(--${c.color});color:var(--${c.color})`
+        : '';
+      pill.innerHTML=`${c.icon} ${c.key}`;
+      pill.addEventListener('click',()=>{ selectedCat=c.key; buildHealthCatPills(); onCatChange(); });
+      el.appendChild(pill);
+    });
+  }
+  /* カテゴリ変更でワクチン専用フィールドの表示切替・ラベル調整 */
+  function onCatChange(){
+    const isVac=selectedCat==='ワクチン';
+    document.getElementById('vaccineFields').style.display=isVac?'flex':'none';
+    const nameLabel=document.getElementById('healthNameLabel');
+    const nameInput=document.getElementById('h_name');
+    if(isVac){ nameLabel.textContent='ワクチン名'; nameInput.placeholder='例: インフルエンザ, MR, 帯状疱疹'; }
+    else if(selectedCat==='通院'){ nameLabel.textContent='医院・診療科'; nameInput.placeholder='例: ○○小児科'; }
+    else if(selectedCat==='症状'){ nameLabel.textContent='症状名'; nameInput.placeholder='例: 発熱, 咳'; }
+    else if(selectedCat==='薬'){ nameLabel.textContent='薬名'; nameInput.placeholder='例: カロナール'; }
+    else if(selectedCat==='検査'){ nameLabel.textContent='検査名'; nameInput.placeholder='例: 血液検査, 健診'; }
+    else if(selectedCat==='発達'){ nameLabel.textContent='項目'; nameInput.placeholder='例: 寝返り, 初語'; }
+    else{ nameLabel.textContent='項目名'; nameInput.placeholder='内容を入力'; }
+  }
+  function resetHealthForm(){
+    selectedCat='ワクチン';
+    buildHealthCatPills(); onCatChange();
+    document.getElementById('h_name').value='';
+    document.getElementById('h_body').value='';
+    document.getElementById('h_dose').value='';
+    document.getElementById('h_status').value='done';
+    setDateToRow('hd', new Date().toISOString().slice(0,10));
+    ['hname','hbody','hdose'].forEach(fieldUpdate);
+  }
+
+  /* ============================================================ 入力フィールド補助 ============================================================ */
+  function fieldUpdate(key){
+    const el=document.getElementById('wrap_'+key); if(!el) return;
+    const input=el.querySelector('input,textarea'); if(!input) return;
+    el.classList.toggle('has-val', input.value.length>0);
+  }
+  function clearField(inputId,key){
+    const el=document.getElementById(inputId); if(!el) return;
+    el.value=''; fieldUpdate(key); el.focus();
+  }
+  /* Enter確定（テキスト系→次へ／最後で保存） */
+  function formKeyDown(e,modalId){
+    if(e.key==='Enter' && !e.shiftKey){
+      e.preventDefault();
+      const inputs=[...document.getElementById(modalId).querySelectorAll('input:not([disabled]),textarea')];
+      const idx=inputs.indexOf(document.activeElement);
+      if(idx>=0 && idx<inputs.length-1){
+        inputs[idx+1].focus();
+        if(inputs[idx+1].type==='number') inputs[idx+1].select();
+      }else{
+        if(modalId==='modalGrowth') saveGrowth();
+        else if(modalId==='modalHealth') saveHealth();
+      }
+    }
+  }
+  /* メモはCtrl+Enterで保存 */
+  function healthBodyKeyDown(e){
+    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); saveHealth(); }
+  }
+
+  /* ============================================================ 保存 ============================================================ */
+  function saveGrowth(){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    const date=getDateFromRow('gd');
+    if(!date){ showToast('日付を選択してください'); return; }
+    if(!currentPersonId){ showToast('人物を選択してください'); return; }
+    const h=parseFloat(document.getElementById('g_height').value)||null;
+    const w=parseFloat(document.getElementById('g_weight').value)||null;
+    const bmi=(h&&w)?Math.round(w/(h/100)**2*10)/10:null;
+    data.growth.push({
+      id:uid(), personId:currentPersonId, date,
+      height:h, weight:w,
+      chestCirc:parseFloat(document.getElementById('g_chest').value)||null,
+      headCirc:parseFloat(document.getElementById('g_head').value)||null,
+      bmi, note:document.getElementById('g_note').value.trim(),
+      createdAt:new Date().toISOString(),
+    });
+    saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('保存しました');
+  }
+
+  function saveHealth(){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    const name=document.getElementById('h_name').value.trim();
+    const body=document.getElementById('h_body').value.trim();
+    if(!name && !body){ showToast('項目名か内容を入力してください'); return; }
+    const personId=healthPersonId!=='all'?healthPersonId:data.persons[0]?.id;
+    if(!personId){ showToast('人物を選択してください'); return; }
+    const rec={
+      id:uid(), personId, category:selectedCat,
+      name, body, date:getDateFromRow('hd'),
+      createdAt:new Date().toISOString(),
+    };
+    if(selectedCat==='ワクチン'){
+      rec.status=document.getElementById('h_status').value;
+      rec.dose=parseInt(document.getElementById('h_dose').value)||null;
+    }
+    data.healthRecords.push(rec);
+    saveData(); renderHealthList(); closeModal('modalHealth'); showToast('保存しました');
+  }
+
+  /* ============================================================ スワイプ削除 ============================================================ */
+  function attachSwipe(wrap,delBtn,onDelete){
+    let startX=null, open=false;
+    wrap.addEventListener('touchstart',e=>{startX=e.touches[0].clientX;},{passive:true});
+    wrap.addEventListener('touchend',e=>{
+      if(startX===null) return;
+      const dx=e.changedTouches[0].clientX-startX;
+      if(dx<-50&&!open){ delBtn.classList.add('visible'); open=true; }
+      else if(dx>20&&open){ delBtn.classList.remove('visible'); open=false; }
+      startX=null;
+    },{passive:true});
+    document.addEventListener('touchstart',e=>{
+      if(!wrap.contains(e.target)&&open){ delBtn.classList.remove('visible'); open=false; }
+    },{passive:true});
+  }
+
+  /* ============================================================ 人物管理 ============================================================ */
+  function renderPersonList(){
+    const el=document.getElementById('personList'); el.innerHTML='';
+    if(data.persons.length===0){
+      el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:8px 0">まだ人物が登録されていません</div>';
+      return;
+    }
+    data.persons.forEach(p=>{
+      const row=document.createElement('div'); row.className='setting-row';
+      const ageStr=p.birthDate?` ・ ${calcAge(p.birthDate,new Date().toISOString().slice(0,10))}`:'';
+      row.innerHTML=`
+        <div style="flex:1">
+          <div class="setting-label">${escHtml(p.name)}</div>
+          <div class="setting-desc">${p.birthDate?'生年月日: '+p.birthDate+ageStr:'生年月日未設定'}</div>
+        </div>
+        <button class="btn-mini purge">削除</button>
+      `;
+      row.querySelector('button').addEventListener('click',()=>removePerson(p.id));
+      el.appendChild(row);
+    });
+  }
+  function addPerson(){
+    const name=document.getElementById('newPersonName').value.trim();
+    if(!name){ showToast('名前を入力してください'); return; }
+    const birth=getDateFromRow('pb'); // 未選択ならnull
+    data.persons.push({ id:uid(), name, birthDate:birth });
+    document.getElementById('newPersonName').value='';
+    fieldUpdate('pname');
+    // 生年月日セレクトを空に戻す
+    ['pb_year','pb_month','pb_day'].forEach(id=>{document.getElementById(id).value='';});
+    saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList();
+    showToast(name+'を追加しました');
+  }
+  function removePerson(id){
+    if(!confirm('この人物を削除しますか？（記録データは残ります）')) return;
+    data.persons=data.persons.filter(p=>p.id!==id);
+    if(currentPersonId===id) currentPersonId=data.persons[0]?.id||null;
+    if(healthPersonId===id) healthPersonId='all';
+    saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList(); renderHealthList();
+  }
+
+  /* ============================================================ インポート（対象人物に紐付け） ============================================================ */
+  function importJSON(e){
+    const file=e.target.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const imported=JSON.parse(ev.target.result);
+        // growthDataフォーマット（Excel変換データ）→ 人物紐付けUIを表示
+        if(imported.growthData){
+          pendingImport=imported;
+          showImportMapping(imported);
+        }
+        // フルバックアップフォーマット
+        else if(imported.persons!==undefined || imported.growth!==undefined){
+          if(!confirm('現在のデータを上書きします。よろしいですか？')) return;
+          data.persons=imported.persons||data.persons;
+          data.growth=imported.growth||data.growth;
+          data.healthRecords=imported.healthRecords||imported.healthRecords||data.healthRecords;
+          saveData(); init(); showToast('インポート完了');
+        }else{
+          showToast('対応していない形式です');
+        }
+      }catch(err){ showToast('JSONの読み込みに失敗しました'); }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  }
+
+  /* インポートデータの各personIdを、登録済み人物に割り当てるUI */
+  function showImportMapping(imported){
+    const desc=document.getElementById('importDesc');
+    const wrap=document.getElementById('importMapping');
+    if(data.persons.length===0){
+      desc.innerHTML='⚠️ 先に「人物管理」で人物を追加してください。';
+      wrap.innerHTML='';
+      openModal('modalImport');
+      return;
+    }
+    desc.textContent='インポートデータの各系列を、登録済みの人物に割り当ててください。';
+    wrap.innerHTML='';
+    imported.growthData.forEach((pd,i)=>{
+      const count=pd.records.length;
+      const field=document.createElement('div'); field.className='form-row';
+      let opts='<option value="">（取り込まない）</option>';
+      data.persons.forEach(p=> opts+=`<option value="${p.id}">${escHtml(p.name)}</option>`);
+      // デフォルトで順番に割当
+      const defaultId=data.persons[i]?.id||'';
+      field.innerHTML=`
+        <div class="form-field" style="flex:1">
+          <label>系列 ${i+1}（${escHtml(pd.personId||'')} ・ ${count}件）→ 割当先</label>
+          <select class="form-input import-map" data-idx="${i}">${opts}</select>
+        </div>`;
+      wrap.appendChild(field);
+      field.querySelector('select').value=defaultId;
+    });
+    openModal('modalImport');
+  }
+
+  function confirmImport(){
+    if(!pendingImport) return;
+    const maps=[...document.querySelectorAll('.import-map')];
+    let added=0;
+    maps.forEach(sel=>{
+      const idx=parseInt(sel.dataset.idx);
+      const personId=sel.value;
+      if(!personId) return;
+      const pd=pendingImport.growthData[idx];
+      pd.records.forEach(r=>{
+        // 重複チェック（同person+同date）
+        const exists=data.growth.some(g=>g.personId===personId && g.date===r.date);
+        if(!exists){
+          data.growth.push({
+            id:uid(), personId, date:r.date,
+            height:r.height??null, weight:r.weight??null,
+            chestCirc:r.chestCirc??null, headCirc:r.headCirc??null,
+            bmi:r.bmi??((r.height&&r.weight)?Math.round(r.weight/(r.height/100)**2*10)/10:null),
+            note:'',
+          });
+          added++;
+        }
+      });
+    });
+    pendingImport=null;
+    saveData();
+    closeModal('modalImport');
+    renderPersonTabs(); renderGrowthList();
+    showToast(`${added}件を取り込みました`);
+  }
+
+  function exportJSON(){
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='karada-log-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click(); showToast('エクスポートしました');
+  }
+  function clearAllData(){
+    if(!confirm('全ての記録を削除します。元に戻せません。')) return;
+    data.growth=[]; data.healthRecords=[];
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全データ削除しました');
+  }
+
+  /* ============================================================ GAS同期 ============================================================ */
+  async function sync(){
+    const url=(document.getElementById('gasUrl').value||data.settings.gasUrl||'').trim();
+    data.settings.gasUrl=url; saveData();
+    if(!url){ showToast('GAS URLが未設定です（設定タブ）'); switchTab('settings'); return; }
+    const btn=document.getElementById('btnSync'); btn.classList.add('syncing');
+    try{
+      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'application/json'},mode:'cors'});
+      const json=await res.json();
+      if(json.status==='ok'){
+        if(json.data){
+          data.persons=json.data.persons||data.persons;
+          data.growth=json.data.growth||data.growth;
+          data.healthRecords=json.data.healthRecords||data.healthRecords;
+          saveData(); renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+        }
+        showToast('同期完了 '+new Date().toLocaleTimeString());
+      }else showToast('同期エラー: '+(json.message||'不明'));
+    }catch(e){ showToast('同期失敗: ネットワークエラー'); }
+    finally{ btn.classList.remove('syncing'); }
+  }
+
+  /* ============================================================ ユーティリティ ============================================================ */
+  function showToast(msg,ms=2200){
+    const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+    clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),ms);
+  }
+  function escHtml(s){ return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''; }
+
+  /* モーダル外クリックで閉じる */
+  document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('open'); }));
+
+  return {
+    init, toggleDark, toggleLock, switchTab,
+    openAddModal, closeModal, saveGrowth, saveHealth,
+    softDelete, restoreItem, purgeItem, restoreAll, purgeAll,
+    fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
+    onDateChange, addPerson, removePerson,
+    importJSON, confirmImport, exportJSON, clearAllData, sync,
+    openCatFilter, applyCatFilter, catFilterSelectAll,
+    openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
+  };
+})();
+
+document.addEventListener('DOMContentLoaded', App.init);
+</script>
+</body>
+</html>
