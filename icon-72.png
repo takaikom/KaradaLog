@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.takaikom.karadalog",
+      "sha256_cert_fingerprints": [
+        "ここにAPK署名証明書のSHA-256フィンガープリントを貼り付ける（後述の手順で取得）"
+      ]
+    }
+  }
+]
