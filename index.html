@@ -8,6 +8,10 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.16: カテゴリ別の予測入力候補
+    - 健康記録の入力で、選択中カテゴリの過去入力を候補表示
+    - 項目名は入力候補(datalist)として、本文はタップ入力できるチップとして提示
+    - カテゴリ切替時に候補も切り替わる
   v2.15: コピーを「複製して編集」に変更
     - コピーボタン(📄)押下で、同じ内容を入力済みの新規追加モーダルを開く
     - そのまま編集・保存で別レコードとして追加（元はそのまま）
@@ -465,6 +469,16 @@ input,select,textarea{font-size:16px;}
 }
 .habit-hover-copy:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
 .habit-hover-copy:active{transform:scale(.9);}
+/* カテゴリ別の予測入力候補チップ（本文） */
+.suggest-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.suggest-chip{
+  font-size:12px;padding:5px 10px;border-radius:14px;
+  background:var(--accent-soft);color:var(--accent);border:1px solid var(--border);
+  font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  transition:background .12s,transform .1s;
+}
+.suggest-chip:hover{background:var(--accent);color:#fff;}
+.suggest-chip:active{transform:scale(.95);}
 
 /* フィルターポップオーバー（Excelのオートフィルタ風） */
 .filter-pop{
@@ -950,9 +964,12 @@ input,select,textarea{font-size:16px;}
         <label id="healthNameLabel">項目名</label>
         <div class="form-input-wrap" id="wrap_hname">
           <input type="text" class="form-input" id="h_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: インフルエンザ予防接種"
+            list="h_name_suggest" autocomplete="off"
             oninput="App.fieldUpdate('hname')" onkeydown="App.formKeyDown(event,'modalHealth')">
           <button class="btn-clear-field" onclick="App.clearField('h_name','hname')">✕</button>
         </div>
+        <!-- カテゴリ別の過去入力候補（項目名） -->
+        <datalist id="h_name_suggest"></datalist>
       </div>
     </div>
     <div class="form-row">
@@ -997,6 +1014,8 @@ input,select,textarea{font-size:16px;}
             oninput="App.fieldUpdate('hbody')" onkeydown="App.healthBodyKeyDown(event)"></textarea>
           <button class="btn-clear-field" style="top:9px" onclick="App.clearField('h_body','hbody')">✕</button>
         </div>
+        <!-- カテゴリ別の過去入力候補（本文）。タップで入力 -->
+        <div class="suggest-chips" id="h_body_suggest" style="display:none"></div>
       </div>
     </div>
     <div class="form-actions">
@@ -2147,6 +2166,58 @@ const App = (() => {
     else if(selectedCat==='検査'){ nameLabel.textContent='検査名'; nameInput.placeholder='例: 血液検査, 健診'; }
     else if(selectedCat==='発達'){ nameLabel.textContent='項目'; nameInput.placeholder='例: 寝返り, 初語'; }
     else{ nameLabel.textContent='項目名'; nameInput.placeholder='内容を入力'; }
+    // カテゴリ別の過去入力候補を反映
+    buildHealthSuggestions();
+  }
+
+  /* ============================================================ カテゴリ別 予測入力候補 ============================================================
+     選択中カテゴリの過去レコードから、項目名(name)・本文(body)の入力候補を集める。
+     項目名はdatalist、本文はタップ可能なチップで提示する。 */
+  function buildHealthSuggestions(){
+    // 同カテゴリの削除されていないレコードを新しい順に
+    const recs = data.healthRecords
+      .filter(r=>!r.deleted && r.category===selectedCat)
+      .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+
+    // --- 項目名のdatalist（重複除去、最大30件） ---
+    const nameSet=[];
+    const seenName=new Set();
+    recs.forEach(r=>{
+      const v=(r.name||'').trim();
+      if(v && !seenName.has(v)){ seenName.add(v); nameSet.push(v); }
+    });
+    const dl=document.getElementById('h_name_suggest');
+    if(dl){
+      dl.innerHTML='';
+      nameSet.slice(0,30).forEach(v=>{
+        const o=document.createElement('option'); o.value=v; dl.appendChild(o);
+      });
+    }
+
+    // --- 本文のサジェストチップ（重複除去、最大8件） ---
+    const bodySet=[];
+    const seenBody=new Set();
+    recs.forEach(r=>{
+      const v=(r.body||'').trim();
+      if(v && !seenBody.has(v)){ seenBody.add(v); bodySet.push(v); }
+    });
+    const chipWrap=document.getElementById('h_body_suggest');
+    if(chipWrap){
+      chipWrap.innerHTML='';
+      bodySet.slice(0,8).forEach(v=>{
+        const chip=document.createElement('button');
+        chip.type='button'; chip.className='suggest-chip';
+        // 長い本文は省略表示
+        chip.textContent = v.length>18 ? v.slice(0,18)+'…' : v;
+        chip.title=v;
+        chip.addEventListener('click',()=>{
+          const ta=document.getElementById('h_body');
+          ta.value=v; fieldUpdate('hbody'); ta.focus();
+        });
+        chipWrap.appendChild(chip);
+      });
+      chipWrap.style.display = bodySet.length ? 'flex' : 'none';
+    }
   }
   function resetHealthForm(){
     selectedCat='ワクチン';
