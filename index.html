@@ -8,6 +8,30 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.7: 同期見直し・グラフ時間軸化・日付表示・編集ボタン改善
+    - GAS同期をID単位マージ(mergeById)に変更し人物等の消失を防止
+      （personにcreatedAt付与、GAS側はテキスト書式固定で日付自動変換を回避）
+    - 成長グラフを時間軸(time scale)化。目盛りは期間に応じ3/6/12ヶ月等に自動調整
+      ラベルは「yyyy年m月」、ホバーで正確な測定日「yyyy年m月d日」を表示
+    - 記録一覧の日付を「yyyy年m月d日（aaa）」表示に変更（formatDateJP）
+    - 編集ボタン(✎)を常時表示にして視認性を向上
+  v2.6: 健康カテゴリの追加/削除を設定画面に追加
+    - 設定タブに「カテゴリ管理」セクションを新設（絵文字＋名前＋色で追加）
+    - デフォルトに「言い間違い」カテゴリを追加
+    - カテゴリ削除時、使用中の記録は「その他」へ自動付け替え
+    - 「初期に戻す」ボタンでデフォルトカテゴリへリセット
+    - data.categories として保存・GAS同期（categoriesシート）対応
+  v2.5: 登録済みデータの編集機能を追加
+    - 成長記録・健康記録の各アイテムをタップで編集モーダルを開く
+    - PCはホバーで✎編集ボタン表示、モバイルは✎を常時表示
+    - 編集モードでは既存値をフォームに復元し、保存で上書き更新
+    - モーダルタイトルが「追加」⇔「編集」で切り替わる
+    - 閉じると編集状態はリセット（新規モードに戻る）
+  v2.4: 接続失敗の原因切り分け強化
+    - POSTがJSONを返さない場合はGETでフォールバック疎通確認
+    - res.json()ではなくtext()で受けてからJSONパース（HTML応答対策）
+    - 失敗時に具体的な原因（JSONでない/ネットワーク等）を画面表示
+    - URL検証を /exec 形式チェックに強化
   v2.3: GAS接続失敗（CORS）を修正
     - fetchのContent-Typeを application/json → text/plain に変更
     - これによりブラウザのCORSプリフライト(OPTIONS)が発生せず、
@@ -234,13 +258,26 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 }
 .habit-hover-del:hover{background:var(--red-soft);color:var(--red);border-color:var(--red);}
 @media (hover:none){.habit-hover-del{display:none!important;}}
+/* 編集ボタン（常時うっすら表示、ホバー/タッチで明確に） */
+.habit-swipe-wrap:hover .habit-hover-edit{opacity:1;pointer-events:auto;}
+.habit-hover-edit{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--accent);
+  background:var(--accent-soft);color:var(--accent);font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;opacity:.85;
+  transition:opacity .15s,background .12s,transform .1s;
+  pointer-events:auto;flex-shrink:0;
+}
+.habit-hover-edit:hover{background:var(--accent);color:#fff;}
+.habit-hover-edit:active{transform:scale(.9);}
+/* タッチ端末でも常時表示 */
+@media (hover:none){.habit-hover-edit{opacity:1;pointer-events:auto;}}
 
 .record-item{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
   padding:12px 14px;display:flex;align-items:center;gap:10px;
 }
 .record-item.deleted{opacity:.45;background:var(--surface2);}
-.record-date{font-size:12px;color:var(--text3);font-weight:700;min-width:74px;}
+.record-date{font-size:12px;color:var(--text3);font-weight:700;min-width:96px;}
 .record-vals{flex:1;display:flex;flex-wrap:wrap;gap:8px 12px;}
 .record-val{display:flex;flex-direction:column;font-size:11px;color:var(--text3);font-weight:600;}
 .record-val span{font-size:15px;font-weight:800;color:var(--text);}
@@ -567,6 +604,36 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
       </div>
     </div>
 
+    <!-- カテゴリ管理（健康管理タブで使うカテゴリの追加/削除） -->
+    <div class="section-title">🏷 カテゴリ管理</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">健康管理で使うカテゴリを追加・削除できます。</div>
+      <div id="categoryList"></div>
+      <div class="form-row" style="margin:12px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:0 0 56px">
+          <label>絵文字</label>
+          <input type="text" class="form-input" id="newCatIcon" maxlength="2" placeholder="🏷"
+            style="text-align:center;font-size:18px;padding:8px 4px">
+        </div>
+        <div class="form-field" style="flex:1.3">
+          <label>カテゴリ名</label>
+          <div class="form-input-wrap" id="wrap_catname">
+            <input type="text" class="form-input" id="newCatName" placeholder="カテゴリ名を入力"
+              oninput="App.fieldUpdate('catname')">
+            <button class="btn-clear-field" onclick="App.clearField('newCatName','catname')">✕</button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:0 0 80px">
+          <label>色</label>
+          <select class="form-input" id="newCatColor" style="padding:8px 6px"></select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="App.resetCategories()" style="margin-right:auto">初期に戻す</button>
+        <button class="btn-primary" onclick="App.addCategory()">＋ カテゴリを追加</button>
+      </div>
+    </div>
+
     <!-- GAS連携 -->
     <div class="section-title">🔗 GAS連携</div>
     <div class="settings-card">
@@ -623,7 +690,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 <!-- ============================================================ 成長記録モーダル ============================================================ -->
 <div class="modal-overlay" id="modalGrowth">
   <div class="modal-sheet">
-    <div class="modal-title">📏 成長記録を追加<button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
+    <div class="modal-title"><span id="modalGrowthTitle">📏 成長記録を追加</span><button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
     <div class="form-row">
       <div class="form-field" style="flex:1">
         <label>日付</label>
@@ -698,7 +765,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 <!-- ============================================================ 健康管理モーダル（ワクチン含む） ============================================================ -->
 <div class="modal-overlay" id="modalHealth">
   <div class="modal-sheet">
-    <div class="modal-title">🩺 健康記録を追加<button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
+    <div class="modal-title"><span id="modalHealthTitle">🩺 健康記録を追加</span><button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
     <!-- カテゴリ選択 -->
     <div class="form-field" style="margin-bottom:14px">
       <label>カテゴリ</label>
@@ -806,6 +873,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/3.6.0/cdn.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
 /* ============================================================
   からだログ メインアプリ
@@ -820,6 +889,7 @@ const App = (() => {
     persons: [],
     growth: [],
     healthRecords: [],
+    categories: [],   // 健康カテゴリ（空ならDEFAULT_CATEGORIESを使用）
     settings: { gasUrl:'', gasConnected:false, darkMode:false, locked:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
   };
 
@@ -833,20 +903,29 @@ const App = (() => {
   let healthCatFilter = null;       // null=全て / Set(カテゴリ名)
   let healthPeriod = { from:null, to:null };
   let pendingImport = null;         // インポート保留データ
+  let editingGrowthId = null;       // 編集中の成長記録ID（null=新規追加）
+  let editingHealthId = null;       // 編集中の健康記録ID（null=新規追加）
 
   const LS_KEY = 'karadaLogData';
 
-  /* 健康カテゴリ定義（ワクチンもここに含める） */
-  const CATEGORIES = [
-    { key:'ワクチン', icon:'💉', color:'teal' },
-    { key:'通院',     icon:'🏥', color:'accent' },
-    { key:'症状',     icon:'🤒', color:'red' },
-    { key:'薬',       icon:'💊', color:'purple' },
-    { key:'検査',     icon:'🔬', color:'orange' },
-    { key:'発達',     icon:'🌱', color:'green' },
-    { key:'その他',   icon:'📌', color:'pink' },
+  /* 健康カテゴリ デフォルト定義（ワクチンもここに含める）
+     ユーザーが設定画面で追加/削除できる。data.categories が無ければこれで初期化。
+     利用可能な色キー: teal/accent/red/purple/orange/green/pink/text3 */
+  const DEFAULT_CATEGORIES = [
+    { key:'ワクチン',   icon:'💉', color:'teal' },
+    { key:'通院',       icon:'🏥', color:'accent' },
+    { key:'症状',       icon:'🤒', color:'red' },
+    { key:'薬',         icon:'💊', color:'purple' },
+    { key:'検査',       icon:'🔬', color:'orange' },
+    { key:'発達',       icon:'🌱', color:'green' },
+    { key:'言い間違い', icon:'💬', color:'pink' },
+    { key:'その他',     icon:'📌', color:'text3' },
   ];
-  const catMeta = k => CATEGORIES.find(c => c.key === k) || CATEGORIES[CATEGORIES.length-1];
+  /* 実際に使うカテゴリ配列（data.categoriesを参照） */
+  const getCategories = () => data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES;
+  const catMeta = k => getCategories().find(c => c.key === k) || { key:k||'その他', icon:'📌', color:'text3' };
+  /* カテゴリ選択に使える色パレット（追加時に選ぶ） */
+  const CAT_COLORS = ['teal','accent','red','purple','orange','green','pink','text3'];
 
   /* ============================================================ 初期化 ============================================================ */
   function init(){
@@ -860,6 +939,8 @@ const App = (() => {
     renderHealthList();
     renderTrash();
     renderPersonList();
+    initCatColorSelect();         // カテゴリ色プルダウン
+    renderCategoryList();         // カテゴリ一覧
     document.getElementById('gasUrl').value = data.settings.gasUrl || '';
     fieldUpdate('gas');
     renderGasStatus();            // GAS接続状態の表示
@@ -873,6 +954,44 @@ const App = (() => {
 
   /* ============================================================ 保存/読込 ============================================================ */
   function saveData(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){ showToast('保存失敗:容量不足'); } }
+
+  /* ============================================================ GASマージ（ID単位で統合：消失を防ぐ） ============================================================
+     ローカル(local)とリモート(remote)をID単位で統合する。
+     - 両方に同IDがある → updatedAt/createdAtが新しい方を採用
+     - 片方にしかない → そのまま残す
+     これにより「同期で人物や記録が消える」事故を防ぐ。 */
+  function mergeById(local, remote, idKey){
+    local = Array.isArray(local) ? local : [];
+    remote = Array.isArray(remote) ? remote : [];
+    const map = new Map();
+    // まずローカルを入れる
+    local.forEach(item => { const k=item[idKey]; if(k!=null) map.set(String(k), item); });
+    // リモートを統合
+    remote.forEach(rItem => {
+      const k = rItem[idKey]; if(k==null) return;
+      const key = String(k);
+      const lItem = map.get(key);
+      if(!lItem){ map.set(key, rItem); return; }
+      // 両方にある → タイムスタンプ比較で新しい方
+      const lt = lItem.updatedAt || lItem.deletedAt || lItem.createdAt || '';
+      const rt = rItem.updatedAt || rItem.deletedAt || rItem.createdAt || '';
+      map.set(key, rt > lt ? rItem : lItem);
+    });
+    return [...map.values()];
+  }
+
+  /* GAS応答データをローカルへID単位マージして反映 */
+  function applyMergedData(remote){
+    if(!remote) return;
+    data.persons       = mergeById(data.persons,       remote.persons,       'id');
+    data.growth        = mergeById(data.growth,        remote.growth,        'id');
+    data.healthRecords = mergeById(data.healthRecords, remote.healthRecords, 'id');
+    // カテゴリはkey単位。リモートが空なら現状維持
+    if(remote.categories && remote.categories.length){
+      data.categories = mergeById(data.categories, remote.categories, 'key');
+    }
+  }
+
   function loadData(){
     try{
       const raw = localStorage.getItem(LS_KEY);
@@ -881,8 +1000,13 @@ const App = (() => {
         data.persons = p.persons || [];
         data.growth = p.growth || [];
         data.healthRecords = p.healthRecords || [];
+        // カテゴリ：保存があればそれを、無ければデフォルトで初期化
+        data.categories = (p.categories && p.categories.length) ? p.categories : DEFAULT_getCategories().map(c=>({...c}));
         data.settings = Object.assign(data.settings, p.settings || {});
         if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
+      } else {
+        // 初回起動：デフォルトカテゴリをセット
+        data.categories = DEFAULT_getCategories().map(c=>({...c}));
       }
     }catch(e){ console.error(e); }
   }
@@ -901,6 +1025,16 @@ const App = (() => {
     if(months < 0){ years--; months += 12; }
     if(years === 0) return months + 'ヵ月';
     return years + '歳' + months + 'ヵ月';
+  }
+
+  /* ISO日付(YYYY-MM-DD) → 「yyyy年m月d日（aaa）」形式。aaaは日〜土の曜日。 */
+  function formatDateJP(iso){
+    if(!iso) return '';
+    const [y,m,d]=String(iso).split('-').map(Number);
+    if(!y||!m||!d) return iso;
+    const dt=new Date(y,m-1,d);
+    const wd=['日','月','火','水','木','金','土'][dt.getDay()];
+    return `${y}年${m}月${d}日（${wd}）`;
   }
 
   /* ============================================================ ダーク/ロック ============================================================ */
@@ -1129,9 +1263,10 @@ const App = (() => {
     del.addEventListener('click',()=>softDelete('growth',r.id));
     const ageStr=(person&&person.birthDate)?calcAge(person.birthDate, r.date):'';
     const item=document.createElement('div'); item.className='record-item';
+    item.style.cursor='pointer';
     item.innerHTML=`
       <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
-        <div class="record-date">${r.date}</div>
+        <div class="record-date">${formatDateJP(r.date)}</div>
         ${ageStr?`<div class="record-age">${ageStr}</div>`:''}
       </div>
       <div class="record-vals">
@@ -1141,9 +1276,18 @@ const App = (() => {
         ${r.chestCirc!=null?`<div class="record-val"><span>${r.chestCirc}</span>胸囲cm</div>`:''}
         ${r.headCirc!=null?`<div class="record-val"><span>${r.headCirc}</span>頭囲cm</div>`:''}
       </div>
-      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
-      <button class="habit-hover-del">✕</button>
+      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
+      <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+        <button class="habit-hover-edit" title="編集">✎</button>
+        <button class="habit-hover-del">✕</button>
+      </div>
     `;
+    // アイテム本体タップで編集（ボタン類のクリックは除外）
+    item.addEventListener('click', e=>{
+      if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')) return;
+      openEditGrowth(r.id);
+    });
+    item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditGrowth(r.id));
     item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('growth',r.id));
     attachSwipe(wrap, del, ()=>softDelete('growth',r.id));
     wrap.appendChild(del); wrap.appendChild(item);
@@ -1192,7 +1336,7 @@ const App = (() => {
     });
   }
 
-  /* ============================================================ グラフ描画 ============================================================ */
+  /* ============================================================ グラフ描画（時間軸／yyyy年m月ラベル／ホバーで正確日付） ============================================================ */
   function renderChart(){
     let recs=data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
     recs.sort((a,b)=>a.date.localeCompare(b.date));
@@ -1204,28 +1348,62 @@ const App = (() => {
     const isDark=data.settings.darkMode;
     const textColor=isDark?'#9aa0be':'#4a5068';
     const gridColor=isDark?'#2a2f44':'#e8ebf3';
-    const labels=recs.map(r=>r.date.slice(2)); // YY-MM-DD
+
+    // 日付文字列(YYYY-MM-DD)をローカルDateに変換するヘルパー
+    const toDate = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
+    // {x:Date,y:値} 形式。値が無い点は除外（spanGapsで繋ぐ）
+    const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toDate(r.date), y:r[key]}));
 
     const vis=data.settings.chartVisible;
     const datasets=[];
-    // 身長（左軸）
-    if(vis.height) datasets.push({label:'身長(cm)',data:recs.map(r=>r.height),borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5});
-    // 体重（右軸）
-    if(vis.weight) datasets.push({label:'体重(kg)',data:recs.map(r=>r.weight),borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
-    // 胸囲（左軸）
-    if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:recs.map(r=>r.chestCirc),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
-    // 頭囲（左軸）
-    if(vis.headCirc) datasets.push({label:'頭囲(cm)',data:recs.map(r=>r.headCirc),borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    if(vis.height)    datasets.push({label:'身長(cm)',data:series('height'),   borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5});
+    if(vis.weight)    datasets.push({label:'体重(kg)',data:series('weight'),   borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
+    if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:series('chestCirc'),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    if(vis.headCirc)  datasets.push({label:'頭囲(cm)',data:series('headCirc'), borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+
+    // データ期間の長さに応じて目盛り間隔を自動調整
+    const first=toDate(recs[0].date), last=toDate(recs[recs.length-1].date);
+    const monthSpan=(last.getFullYear()-first.getFullYear())*12 + (last.getMonth()-first.getMonth());
+    let tickUnit='month', stepSize=3;            // 既定: 3ヶ月間隔
+    if(monthSpan>72){ tickUnit='year'; stepSize=1; }          // 6年超 → 1年間隔
+    else if(monthSpan>36){ tickUnit='month'; stepSize=12; }   // 3〜6年 → 1年間隔
+    else if(monthSpan>18){ tickUnit='month'; stepSize=6; }    // 1.5〜3年 → 6ヶ月間隔
+    else if(monthSpan>6){ tickUnit='month'; stepSize=3; }     // 半年〜1.5年 → 3ヶ月間隔
+    else { tickUnit='month'; stepSize=1; }                    // 半年以内 → 1ヶ月間隔
 
     chart=new Chart(ctx,{
       type:'line',
-      data:{labels,datasets},
+      data:{datasets},
       options:{
         responsive:true,maintainAspectRatio:false,
-        interaction:{mode:'index',intersect:false},
-        plugins:{ legend:{display:false} },  // 凡例はカスタムチップで代替
+        interaction:{mode:'nearest',axis:'x',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            callbacks:{
+              // ホバー時のタイトル: 正確な測定日 yyyy年m月d日
+              title:(items)=>{
+                if(!items.length) return '';
+                const d=new Date(items[0].parsed.x);
+                return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+              },
+              label:(item)=>`${item.dataset.label}: ${item.parsed.y}`,
+            }
+          }
+        },
         scales:{
-          x:{ticks:{color:textColor,maxRotation:50,font:{size:9}},grid:{color:gridColor}},
+          x:{
+            type:'time',
+            time:{
+              unit:tickUnit,
+              stepSize:stepSize,
+              // 目盛りラベル: yyyy年m月
+              displayFormats:{ month:'yyyy年M月', year:'yyyy年' },
+              tooltipFormat:'yyyy年M月d日',
+            },
+            ticks:{color:textColor,maxRotation:50,minRotation:0,font:{size:9},autoSkip:true,maxTicksLimit:8},
+            grid:{color:gridColor},
+          },
           y:{position:'left',ticks:{color:textColor,font:{size:10}},grid:{color:gridColor},title:{display:true,text:'身長/囲(cm)',color:textColor,font:{size:10}}},
           y2:{position:'right',ticks:{color:'#22b765',font:{size:10}},grid:{drawOnChartArea:false},title:{display:true,text:'体重(kg)',color:'#22b765',font:{size:10}}}
         }
@@ -1239,7 +1417,7 @@ const App = (() => {
     // 人物フィルター
     if(healthPersonId!=='all') records=records.filter(r=>r.personId===healthPersonId);
     // カテゴリフィルター
-    if(healthCatFilter && healthCatFilter.size>0 && healthCatFilter.size<CATEGORIES.length){
+    if(healthCatFilter && healthCatFilter.size>0 && healthCatFilter.size<getCategories().length){
       records=records.filter(r=>healthCatFilter.has(r.category));
     }
     // 期間フィルター（YYYY-MM単位）
@@ -1253,7 +1431,7 @@ const App = (() => {
     });
 
     // フィルター状態のボタン見た目更新
-    document.getElementById('catFilterBtn').classList.toggle('active', !!(healthCatFilter && healthCatFilter.size<CATEGORIES.length));
+    document.getElementById('catFilterBtn').classList.toggle('active', !!(healthCatFilter && healthCatFilter.size<getCategories().length));
     document.getElementById('periodFilterBtn').classList.toggle('active', !!(healthPeriod.from||healthPeriod.to));
     document.getElementById('healthCount').textContent = `${records.length}件`;
 
@@ -1270,6 +1448,7 @@ const App = (() => {
       const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
       del.addEventListener('click',()=>softDelete('healthRecords',r.id));
       const item=document.createElement('div'); item.className='health-item';
+      item.style.cursor='pointer';
       const ageStr=(person&&person.birthDate&&r.date)?calcAge(person.birthDate,r.date):'';
       const statusBadge = r.category==='ワクチン'
         ? (r.status==='scheduled'
@@ -1284,11 +1463,20 @@ const App = (() => {
             <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${r.category}</span>
             ${statusBadge}
           </div>
-          <div class="health-meta">${r.date||'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
+          <div class="health-meta">${r.date?formatDateJP(r.date):'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
           ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
         </div>
-        <button class="habit-hover-del">✕</button>
+        <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start">
+          <button class="habit-hover-edit" title="編集">✎</button>
+          <button class="habit-hover-del">✕</button>
+        </div>
       `;
+      // アイテム本体タップで編集
+      item.addEventListener('click', e=>{
+        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')) return;
+        openEditHealth(r.id);
+      });
+      item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditHealth(r.id));
       item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('healthRecords',r.id));
       attachSwipe(wrap, del, ()=>softDelete('healthRecords',r.id));
       wrap.appendChild(del); wrap.appendChild(item);
@@ -1312,9 +1500,9 @@ const App = (() => {
     const pop=document.getElementById('catFilterPop');
     const checks=document.getElementById('catFilterChecks');
     // 現在の選択（null=全選択扱い）
-    const selected = healthCatFilter || new Set(CATEGORIES.map(c=>c.key));
+    const selected = healthCatFilter || new Set(getCategories().map(c=>c.key));
     checks.innerHTML='';
-    CATEGORIES.forEach(c=>{
+    getCategories().forEach(c=>{
       const lbl=document.createElement('label'); lbl.className='filter-check';
       lbl.innerHTML=`<input type="checkbox" value="${c.key}" ${selected.has(c.key)?'checked':''}> ${c.icon} ${c.key}`;
       checks.appendChild(lbl);
@@ -1327,7 +1515,7 @@ const App = (() => {
   }
   function applyCatFilter(){
     const checked=[...document.querySelectorAll('#catFilterChecks input:checked')].map(i=>i.value);
-    healthCatFilter = checked.length===CATEGORIES.length ? null : new Set(checked);
+    healthCatFilter = checked.length===getCategories().length ? null : new Set(checked);
     closeAllPops();
     renderHealthList();
   }
@@ -1440,13 +1628,65 @@ const App = (() => {
     const el=document.getElementById(id); el.classList.add('open');
     setTimeout(()=>{ const f=el.querySelector('input:not([type=hidden]),textarea'); }, 280);
   }
-  function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+  function closeModal(id){
+    document.getElementById(id).classList.remove('open');
+    // 編集状態をリセット（閉じたら新規モードに戻す）
+    if(id==='modalGrowth') editingGrowthId=null;
+    if(id==='modalHealth') editingHealthId=null;
+  }
 
   function openAddModal(){
     if(data.settings.locked){ showToast('編集ロック中'); return; }
     if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
-    if(currentTab==='growth'){ resetGrowthForm(); updateGrowthAgePreview(); openModal('modalGrowth'); }
-    else if(currentTab==='health'){ resetHealthForm(); openModal('modalHealth'); }
+    if(currentTab==='growth'){
+      editingGrowthId=null;  // 新規モード
+      document.getElementById('modalGrowthTitle').textContent='📏 成長記録を追加';
+      resetGrowthForm(); updateGrowthAgePreview(); openModal('modalGrowth');
+    }
+    else if(currentTab==='health'){
+      editingHealthId=null;  // 新規モード
+      document.getElementById('modalHealthTitle').textContent='🩺 健康記録を追加';
+      resetHealthForm(); openModal('modalHealth');
+    }
+  }
+
+  /* ============================================================ 編集モードでモーダルを開く ============================================================ */
+  /* 成長記録を編集 */
+  function openEditGrowth(id){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    const r=data.growth.find(x=>x.id===id); if(!r) return;
+    editingGrowthId=id;  // 編集モード
+    // 編集対象が別人物の記録でも、その人物に切り替えて編集
+    if(r.personId!==currentPersonId){ currentPersonId=r.personId; renderPersonTabs(); }
+    document.getElementById('modalGrowthTitle').textContent='📏 成長記録を編集';
+    // 既存値をフォームへ
+    setDate('gd', r.date);
+    document.getElementById('g_height').value = r.height!=null?r.height:'';
+    document.getElementById('g_weight').value = r.weight!=null?r.weight:'';
+    document.getElementById('g_chest').value = r.chestCirc!=null?r.chestCirc:'';
+    document.getElementById('g_head').value = r.headCirc!=null?r.headCirc:'';
+    document.getElementById('g_note').value = r.note||'';
+    ['gheight','gweight','gchest','ghead','gnote'].forEach(fieldUpdate);
+    updateGrowthAgePreview();
+    openModal('modalGrowth');
+  }
+
+  /* 健康記録を編集 */
+  function openEditHealth(id){
+    if(data.settings.locked){ showToast('編集ロック中'); return; }
+    const r=data.healthRecords.find(x=>x.id===id); if(!r) return;
+    editingHealthId=id;  // 編集モード
+    document.getElementById('modalHealthTitle').textContent='🩺 健康記録を編集';
+    // カテゴリ復元
+    selectedCat=r.category||'その他';
+    buildHealthCatPills(); onCatChange();
+    document.getElementById('h_name').value=r.name||'';
+    document.getElementById('h_body').value=r.body||'';
+    document.getElementById('h_dose').value=r.dose!=null?r.dose:'';
+    document.getElementById('h_status').value=r.status||'done';
+    setDate('hd', r.date);
+    ['hname','hbody','hdose'].forEach(fieldUpdate);
+    openModal('modalHealth');
   }
 
   function resetGrowthForm(){
@@ -1460,7 +1700,7 @@ const App = (() => {
   let selectedCat='ワクチン';
   function buildHealthCatPills(){
     const el=document.getElementById('healthCatPills'); el.innerHTML='';
-    CATEGORIES.forEach(c=>{
+    getCategories().forEach(c=>{
       const pill=document.createElement('button');
       pill.className='cat-pill'+(c.key===selectedCat?' selected':'');
       pill.style.cssText = c.key===selectedCat
@@ -1526,7 +1766,7 @@ const App = (() => {
     if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); saveHealth(); }
   }
 
-  /* ============================================================ 保存 ============================================================ */
+  /* ============================================================ 保存（新規追加 / 編集更新の両対応） ============================================================ */
   function saveGrowth(){
     if(data.settings.locked){ showToast('編集ロック中'); return; }
     const date=getDateISO('gd');
@@ -1535,15 +1775,27 @@ const App = (() => {
     const h=parseFloat(document.getElementById('g_height').value)||null;
     const w=parseFloat(document.getElementById('g_weight').value)||null;
     const bmi=(h&&w)?Math.round(w/(h/100)**2*10)/10:null;
-    data.growth.push({
-      id:uid(), personId:currentPersonId, date,
-      height:h, weight:w,
-      chestCirc:parseFloat(document.getElementById('g_chest').value)||null,
-      headCirc:parseFloat(document.getElementById('g_head').value)||null,
-      bmi, note:document.getElementById('g_note').value.trim(),
-      createdAt:new Date().toISOString(),
-    });
-    saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('保存しました');
+    const note=document.getElementById('g_note').value.trim();
+    const chestCirc=parseFloat(document.getElementById('g_chest').value)||null;
+    const headCirc=parseFloat(document.getElementById('g_head').value)||null;
+
+    if(editingGrowthId){
+      // ── 編集：既存レコードを更新 ──
+      const r=data.growth.find(x=>x.id===editingGrowthId);
+      if(r){
+        Object.assign(r,{ date, height:h, weight:w, chestCirc, headCirc, bmi, note, updatedAt:new Date().toISOString() });
+      }
+      editingGrowthId=null;
+      saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('更新しました');
+    }else{
+      // ── 新規追加 ──
+      data.growth.push({
+        id:uid(), personId:currentPersonId, date,
+        height:h, weight:w, chestCirc, headCirc, bmi, note,
+        createdAt:new Date().toISOString(),
+      });
+      saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('保存しました');
+    }
   }
 
   function saveHealth(){
@@ -1551,19 +1803,32 @@ const App = (() => {
     const name=document.getElementById('h_name').value.trim();
     const body=document.getElementById('h_body').value.trim();
     if(!name && !body){ showToast('項目名か内容を入力してください'); return; }
-    const personId=healthPersonId!=='all'?healthPersonId:data.persons[0]?.id;
-    if(!personId){ showToast('人物を選択してください'); return; }
-    const rec={
-      id:uid(), personId, category:selectedCat,
-      name, body, date:getDateISO('hd'),
-      createdAt:new Date().toISOString(),
-    };
-    if(selectedCat==='ワクチン'){
-      rec.status=document.getElementById('h_status').value;
-      rec.dose=parseInt(document.getElementById('h_dose').value)||null;
+    const date=getDateISO('hd');
+    const isVac=selectedCat==='ワクチン';
+    const status=isVac?document.getElementById('h_status').value:undefined;
+    const dose=isVac?(parseInt(document.getElementById('h_dose').value)||null):undefined;
+
+    if(editingHealthId){
+      // ── 編集：既存レコードを更新 ──
+      const r=data.healthRecords.find(x=>x.id===editingHealthId);
+      if(r){
+        r.category=selectedCat; r.name=name; r.body=body; r.date=date;
+        r.updatedAt=new Date().toISOString();
+        // ワクチン専用項目はカテゴリに応じて設定/削除
+        if(isVac){ r.status=status; r.dose=dose; }
+        else { delete r.status; delete r.dose; }
+      }
+      editingHealthId=null;
+      saveData(); renderHealthList(); closeModal('modalHealth'); showToast('更新しました');
+    }else{
+      // ── 新規追加 ──
+      const personId=healthPersonId!=='all'?healthPersonId:data.persons[0]?.id;
+      if(!personId){ showToast('人物を選択してください'); return; }
+      const rec={ id:uid(), personId, category:selectedCat, name, body, date, createdAt:new Date().toISOString() };
+      if(isVac){ rec.status=status; rec.dose=dose; }
+      data.healthRecords.push(rec);
+      saveData(); renderHealthList(); closeModal('modalHealth'); showToast('保存しました');
     }
-    data.healthRecords.push(rec);
-    saveData(); renderHealthList(); closeModal('modalHealth'); showToast('保存しました');
   }
 
   /* ============================================================ スワイプ削除 ============================================================ */
@@ -1607,7 +1872,7 @@ const App = (() => {
     const name=document.getElementById('newPersonName').value.trim();
     if(!name){ showToast('名前を入力してください'); return; }
     const birth=getDateISO('pb'); // 未入力ならnull
-    data.persons.push({ id:uid(), name, birthDate:birth });
+    data.persons.push({ id:uid(), name, birthDate:birth, createdAt:new Date().toISOString() });
     document.getElementById('newPersonName').value='';
     fieldUpdate('pname');
     // 生年月日欄を空に戻す
@@ -1621,6 +1886,83 @@ const App = (() => {
     if(currentPersonId===id) currentPersonId=data.persons[0]?.id||null;
     if(healthPersonId===id) healthPersonId='all';
     saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList(); renderHealthList();
+  }
+
+  /* ============================================================ カテゴリ管理 ============================================================ */
+  /* 色選択プルダウンの初期化（1度だけ） */
+  function initCatColorSelect(){
+    const sel=document.getElementById('newCatColor'); if(!sel||sel.options.length) return;
+    const colorLabels={teal:'青緑',accent:'青',red:'赤',purple:'紫',orange:'橙',green:'緑',pink:'桃',text3:'灰'};
+    CAT_COLORS.forEach(c=>{
+      const o=document.createElement('option'); o.value=c; o.textContent=colorLabels[c]||c; sel.appendChild(o);
+    });
+  }
+  /* カテゴリ一覧の描画（各行に削除ボタン） */
+  function renderCategoryList(){
+    const el=document.getElementById('categoryList'); if(!el) return;
+    el.innerHTML='';
+    const cats=getCategories();
+    cats.forEach(c=>{
+      // 使用件数（削除時の注意表示用）
+      const used=data.healthRecords.filter(r=>!r.deleted && r.category===c.key).length;
+      const row=document.createElement('div'); row.className='setting-row';
+      row.innerHTML=`
+        <div class="health-icon" style="width:30px;height:30px;font-size:15px;background:var(--${c.color}-soft);color:var(--${c.color})">${c.icon}</div>
+        <div style="flex:1">
+          <div class="setting-label">${escHtml(c.key)}</div>
+          <div class="setting-desc">${used>0?used+'件で使用中':'未使用'}</div>
+        </div>
+        <button class="btn-mini purge">削除</button>
+      `;
+      row.querySelector('button').addEventListener('click',()=>removeCategory(c.key));
+      el.appendChild(row);
+    });
+  }
+  /* カテゴリ追加 */
+  function addCategory(){
+    const name=document.getElementById('newCatName').value.trim();
+    if(!name){ showToast('カテゴリ名を入力してください'); return; }
+    // 重複チェック
+    if(getCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
+    const icon=(document.getElementById('newCatIcon').value.trim())||'🏷';
+    const color=document.getElementById('newCatColor').value||'text3';
+    // data.categoriesが空ならデフォルトを実体化してから追加
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    data.categories.push({ key:name, icon, color });
+    // 入力欄クリア
+    document.getElementById('newCatName').value='';
+    document.getElementById('newCatIcon').value='';
+    fieldUpdate('catname');
+    saveData(); renderCategoryList(); buildHealthCatPills();
+    showToast(name+'を追加しました');
+  }
+  /* カテゴリ削除（使用中の記録は「その他」に付け替え） */
+  function removeCategory(key){
+    const cats=getCategories();
+    if(cats.length<=1){ showToast('最後のカテゴリは削除できません'); return; }
+    const used=data.healthRecords.filter(r=>!r.deleted && r.category===key).length;
+    const msg=used>0
+      ? `「${key}」を削除します。\nこのカテゴリの記録 ${used}件は「その他」に変更されます。よろしいですか？`
+      : `「${key}」を削除しますか？`;
+    if(!confirm(msg)) return;
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    data.categories=data.categories.filter(c=>c.key!==key);
+    // 付け替え先（「その他」が無ければ先頭カテゴリ）
+    const fallback=data.categories.some(c=>c.key==='その他')?'その他':data.categories[0].key;
+    data.healthRecords.forEach(r=>{ if(r.category===key) r.category=fallback; });
+    // フィルタやモーダルの選択が消えたカテゴリを指していたら調整
+    if(selectedCat===key) selectedCat=data.categories[0].key;
+    if(healthCatFilter) healthCatFilter.delete(key);
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('削除しました');
+  }
+  /* デフォルトに戻す */
+  function resetCategories(){
+    if(!confirm('カテゴリを初期状態に戻します。\n追加したカテゴリは削除されます（記録のカテゴリ名は残ります）。よろしいですか？')) return;
+    data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    selectedCat=data.categories[0].key;
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('初期カテゴリに戻しました');
   }
 
   /* ============================================================ インポート（対象人物に紐付け） ============================================================ */
@@ -1751,39 +2093,76 @@ const App = (() => {
     }
   }
 
-  /* 接続ボタン：URLを保存し、実際に疎通確認してから接続状態にする */
+  /* 接続ボタン：URLを保存し、実際に疎通確認してから接続状態にする
+     POST(text/plain)を基本とし、失敗時はGETでフォールバック。
+     エラー原因を画面に出して切り分けできるようにする。 */
   async function connectGas(){
     const url=(document.getElementById('gasUrl').value||'').trim();
     if(!url){ showToast('GAS URLを入力してください'); return; }
-    if(!/^https:\/\/script\.google\.com\//.test(url)){
-      if(!confirm('Google Apps ScriptのURL形式と異なります。このまま接続を試みますか？')) return;
+    if(!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)){
+      if(!confirm('URLが /exec で終わる正しい形式か確認してください。\nこのまま接続を試みますか？')) return;
     }
     const btn=document.getElementById('gasConnectBtn');
     const orig=btn.textContent;
     btn.textContent='接続中...'; btn.disabled=true;
+
+    // 接続成功時の共通処理
+    const onSuccess=(json)=>{
+      data.settings.gasUrl=url;
+      data.settings.gasConnected=true;
+      if(json.data){
+        applyMergedData(json.data);  // ID単位マージ（人物・記録の消失防止）
+      }
+      saveData(); renderGasStatus();
+      renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+      renderCategoryList(); buildHealthCatPills();
+      showToast('✅ 接続しました（同期完了）', 2600);
+    };
+
     try{
-      // 疎通確認。Content-Typeはtext/plainにしてCORSプリフライト(OPTIONS)を回避する
-      // （GASはdoOptionsを返せないため、application/jsonだとブラウザにブロックされ接続失敗する）
-      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
-      const json=await res.json();
-      if(json.status==='ok'){
-        // 接続成功：URL保存＋接続フラグON、返却データをマージ
-        data.settings.gasUrl=url;
-        data.settings.gasConnected=true;
-        if(json.data){
-          data.persons=json.data.persons||data.persons;
-          data.growth=json.data.growth||data.growth;
-          data.healthRecords=json.data.healthRecords||data.healthRecords;
+      let json=null;
+      // ── 試行1: POST（データ同期も兼ねる） ──
+      try{
+        const res=await fetch(url,{
+          method:'POST',
+          body:JSON.stringify({action:'sync',data}),
+          headers:{'Content-Type':'text/plain;charset=utf-8'},
+          redirect:'follow',
+        });
+        const text=await res.text();
+        // GASが正常ならJSON。HTML（ログイン画面等）が返る場合に備えてtextで受けてからパース
+        try{ json=JSON.parse(text); }
+        catch(parseErr){
+          // POSTのレスポンスがJSONでない → GETで再確認へ
+          console.warn('POST応答がJSONでない:', text.slice(0,200));
+          json=null;
         }
-        saveData();
-        renderGasStatus();
-        renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
-        showToast('✅ 接続しました（同期完了）');
+      }catch(postErr){
+        console.warn('POST失敗:', postErr.message);
+        json=null;
+      }
+
+      // ── 試行2: POSTがダメならGETで疎通だけ確認 ──
+      if(!json){
+        const res2=await fetch(url,{method:'GET',redirect:'follow'});
+        const text2=await res2.text();
+        try{ json=JSON.parse(text2); }
+        catch(e2){
+          // GETもJSONでない → 高確率でアクセス権/ログイン問題
+          showToast('接続失敗: 応答がJSONではありません（アクセス権を「全員」にして再デプロイしてください）', 4000);
+          return;
+        }
+      }
+
+      if(json && json.status==='ok'){
+        onSuccess(json);
       }else{
-        showToast('接続エラー: '+(json.message||'応答が不正です'));
+        showToast('接続エラー: '+(json && json.message ? json.message : '応答が不正です'), 3500);
       }
     }catch(e){
-      showToast('接続失敗: URLを確認してください');
+      // ネットワーク層の失敗（CORS / URL誤り / オフライン 等）
+      console.error('connectGas error:', e);
+      showToast('接続失敗: '+(e.message||'ネットワークエラー')+'（URLとネット接続を確認）', 4000);
     }finally{
       btn.textContent=orig; btn.disabled=false;
     }
@@ -1810,17 +2189,19 @@ const App = (() => {
     try{
       // Content-Typeはtext/plainにしてCORSプリフライトを回避（GAS連携の必須対応）
       const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
-      const json=await res.json();
+      const txt=await res.text();
+      let json;
+      try{ json=JSON.parse(txt); }
+      catch(e){ showToast('同期失敗: 応答がJSONではありません'); return; }
       if(json.status==='ok'){
         if(json.data){
-          data.persons=json.data.persons||data.persons;
-          data.growth=json.data.growth||data.growth;
-          data.healthRecords=json.data.healthRecords||data.healthRecords;
+          applyMergedData(json.data);  // ID単位マージ（人物・記録の消失防止）
           saveData(); renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+          renderCategoryList(); buildHealthCatPills();
         }
         showToast('同期完了 '+new Date().toLocaleTimeString());
       }else showToast('同期エラー: '+(json.message||'不明'));
-    }catch(e){ showToast('同期失敗: ネットワークエラー'); }
+    }catch(e){ showToast('同期失敗: '+(e.message||'ネットワークエラー')); }
     finally{ btn.classList.remove('syncing'); }
   }
 
@@ -1837,10 +2218,12 @@ const App = (() => {
   return {
     init, toggleDark, toggleLock, switchTab,
     openAddModal, closeModal, saveGrowth, saveHealth,
+    openEditGrowth, openEditHealth,
     softDelete, restoreItem, purgeItem, restoreAll, purgeAll,
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
     onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
     addPerson, removePerson,
+    addCategory, removeCategory, resetCategories,
     importJSON, confirmImport, exportJSON, clearAllData, sync,
     connectGas, disconnectGas,
     openCatFilter, applyCatFilter, catFilterSelectAll,
