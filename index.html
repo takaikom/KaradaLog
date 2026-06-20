@@ -8,6 +8,19 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.8: 表示不具合の根治・GAS送受信の分離
+    - グラフの時間軸を外部date-fnsアダプタ依存から脱却（linear軸＋自前整形）。
+      アダプタCDN読込失敗でグラフが落ち、一覧・保存後更新まで巻き込む問題を解消
+    - renderChartをtry-catchで隔離し、グラフ失敗でも一覧は必ず表示
+    - GAS同期を「⬆送信(push)」「⬇受信(pull)」に分離（ヘッダーに2ボタン）
+      接続時は受信のみ実行しローカルの意図しない上書きを防止
+    - GAS側にpush/pull/sync(互換)アクションを追加
+  v2.7.1: 重大バグ修正（記録が表示されない/保存後モーダルが閉じない）
+    - loadData内の関数名誤り(DEFAULT_getCategories)を修正。これが原因で
+      データ読込が例外で停止し、一覧・グラフ非表示・保存後の画面更新停止が発生していた
+    - normalizeData()を追加。GAS/インポート由来でdateが数値やDate型でも
+      "YYYY-MM-DD"文字列へ正規化し、数値・boolean型も復元
+    - 各種ソート/最新日時取得をnull安全化、グラフは妥当な日付のみ描画
   v2.7: 同期見直し・グラフ時間軸化・日付表示・編集ボタン改善
     - GAS同期をID単位マージ(mergeById)に変更し人物等の消失を防止
       （personにcreatedAt付与、GAS側はテキスト書式固定で日付自動変換を回避）
@@ -151,6 +164,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 .icon-btn.btn-sync{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
 .icon-btn.btn-sync:hover{background:var(--accent);color:#fff;}
 .icon-btn.btn-sync.syncing{animation:spin 1s linear infinite;}
+/* 送信・受信ボタン */
+.icon-btn.btn-push{background:var(--green-soft);border-color:var(--green);color:var(--green);}
+.icon-btn.btn-push:hover{background:var(--green);color:#fff;}
+.icon-btn.btn-pull{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.icon-btn.btn-pull:hover{background:var(--accent);color:#fff;}
+.icon-btn.busy{animation:pulse 0.8s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
 @keyframes spin{to{transform:rotate(360deg);}}
 
 /* ============================================================
@@ -510,7 +530,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
     <div class="logo-mark">🌿</div>
     <div class="logo-text">からだログ<small>KARADA LOG</small></div>
   </div>
-  <button class="icon-btn btn-sync" id="btnSync" title="同期" onclick="App.sync()">⟳</button>
+  <button class="icon-btn btn-push" id="btnPush" title="送信（アップロード）" onclick="App.pushToGas()">⬆</button>
+  <button class="icon-btn btn-pull" id="btnPull" title="受信（ダウンロード）" onclick="App.pullFromGas()">⬇</button>
   <button class="icon-btn btn-lock" id="btnLock" title="編集ロック" onclick="App.toggleLock()">🔓</button>
   <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
 </header>
@@ -873,8 +894,6 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/3.6.0/cdn.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
 /* ============================================================
   からだログ メインアプリ
@@ -990,6 +1009,39 @@ const App = (() => {
     if(remote.categories && remote.categories.length){
       data.categories = mergeById(data.categories, remote.categories, 'key');
     }
+    normalizeData();  // 型を整える（dateを文字列化、数値を数値化）
+  }
+
+  /* ============================================================ データ正規化（型の不整合で描画が落ちるのを防ぐ） ============================================================
+     GAS/インポート由来でdateが数値やDateになっていても、必ず "YYYY-MM-DD" 文字列に揃える。 */
+  function normalizeData(){
+    const toISO = v => {
+      if(v==null || v==='') return null;
+      if(typeof v==='string'){
+        // 既にYYYY-MM-DD ならそのまま。スラッシュ等は変換
+        const m=v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+        return v;
+      }
+      // Date or 数値
+      const d=new Date(v);
+      if(!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return String(v);
+    };
+    const num = v => (v==null||v===''||isNaN(v))?null:Number(v);
+
+    (data.growth||[]).forEach(r=>{
+      r.date=toISO(r.date);
+      r.height=num(r.height); r.weight=num(r.weight);
+      r.chestCirc=num(r.chestCirc); r.headCirc=num(r.headCirc); r.bmi=num(r.bmi);
+      // booleanの文字列化対策
+      if(r.deleted==='true') r.deleted=true; if(r.deleted==='false'||r.deleted===''||r.deleted==null) r.deleted=r.deleted===true;
+    });
+    (data.healthRecords||[]).forEach(r=>{
+      r.date=toISO(r.date); r.dose=num(r.dose);
+      if(r.deleted==='true') r.deleted=true; if(r.deleted==='false'||r.deleted===''||r.deleted==null) r.deleted=r.deleted===true;
+    });
+    (data.persons||[]).forEach(p=>{ if(p.birthDate) p.birthDate=toISO(p.birthDate); });
   }
 
   function loadData(){
@@ -1001,13 +1053,14 @@ const App = (() => {
         data.growth = p.growth || [];
         data.healthRecords = p.healthRecords || [];
         // カテゴリ：保存があればそれを、無ければデフォルトで初期化
-        data.categories = (p.categories && p.categories.length) ? p.categories : DEFAULT_getCategories().map(c=>({...c}));
+        data.categories = (p.categories && p.categories.length) ? p.categories : DEFAULT_CATEGORIES.map(c=>({...c}));
         data.settings = Object.assign(data.settings, p.settings || {});
         if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
       } else {
         // 初回起動：デフォルトカテゴリをセット
-        data.categories = DEFAULT_getCategories().map(c=>({...c}));
+        data.categories = DEFAULT_CATEGORIES.map(c=>({...c}));
       }
+      normalizeData();  // 読み込み後に型を整える
     }catch(e){ console.error(e); }
   }
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -1233,28 +1286,32 @@ const App = (() => {
 
   /* ある人物の最新成長記録日 */
   function latestGrowthDate(personId){
-    const recs = data.growth.filter(r=>!r.deleted && r.personId===personId);
+    const recs = data.growth.filter(r=>!r.deleted && r.personId===personId && r.date);
     if(recs.length===0) return null;
-    return recs.reduce((a,b)=> a.date>b.date?a:b).date;
+    return recs.reduce((a,b)=> String(a.date)>String(b.date)?a:b).date;
   }
 
   /* ============================================================ 成長リスト・サマリー ============================================================ */
   function renderGrowthList(){
     let records = data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
-    records.sort((a,b)=>b.date.localeCompare(a.date));
+    records.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
     const list=document.getElementById('growthList');
     const empty=document.getElementById('growthEmpty');
     list.innerHTML='';
     if(records.length===0){
-      empty.style.display=''; renderSummary([]); renderLegend(); renderChart();
+      empty.style.display='';
+      renderSummary([]); renderLegend();
+      try{ renderChart(); }catch(e){ console.warn('renderChart skip:', e.message); }
       return;
     }
     empty.style.display='none';
-    renderSummary(records);
-    renderLegend();
-    renderChart();
+    // 先にリストを描画（グラフが失敗しても一覧は必ず出す）
     const person=data.persons.find(p=>p.id===currentPersonId);
     records.forEach(r=> list.appendChild(buildGrowthItem(r, person)));
+    renderSummary(records);
+    renderLegend();
+    // グラフは最後に。失敗しても一覧表示は維持する
+    try{ renderChart(); }catch(e){ console.warn('renderChart skip:', e.message); }
   }
 
   function buildGrowthItem(r, person){
@@ -1336,23 +1393,25 @@ const App = (() => {
     });
   }
 
-  /* ============================================================ グラフ描画（時間軸／yyyy年m月ラベル／ホバーで正確日付） ============================================================ */
+  /* ============================================================ グラフ描画（linear時間軸：外部アダプタ不要／yyyy年m月ラベル／ホバーで正確日付） ============================================================
+     Chart.jsのtime軸は date-fns アダプタCDNに依存し、読込失敗でグラフ全体が落ちるため、
+     x軸を linear（値=エポックms）にして目盛りラベルとツールチップを自前整形する。 */
   function renderChart(){
-    let recs=data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
-    recs.sort((a,b)=>a.date.localeCompare(b.date));
     const ctx=document.getElementById('chartCanvas');
     if(!ctx) return;
-    if(chart){ chart.destroy(); chart=null; }
+    if(chart){ try{chart.destroy();}catch(e){} chart=null; }
+    let recs=data.growth.filter(r=>!r.deleted && r.personId===currentPersonId && r.date && /^\d{4}-\d{2}-\d{2}/.test(String(r.date)));
+    recs.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     if(recs.length===0) return;
+    if(typeof Chart==='undefined') return;  // Chart.js未ロードでも他描画は止めない
 
     const isDark=data.settings.darkMode;
     const textColor=isDark?'#9aa0be':'#4a5068';
     const gridColor=isDark?'#2a2f44':'#e8ebf3';
 
-    // 日付文字列(YYYY-MM-DD)をローカルDateに変換するヘルパー
-    const toDate = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
-    // {x:Date,y:値} 形式。値が無い点は除外（spanGapsで繋ぐ）
-    const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toDate(r.date), y:r[key]}));
+    // 日付文字列→エポックms
+    const toMs = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d).getTime(); };
+    const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date), y:r[key]}));
 
     const vis=data.settings.chartVisible;
     const datasets=[];
@@ -1361,15 +1420,24 @@ const App = (() => {
     if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:series('chestCirc'),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
     if(vis.headCirc)  datasets.push({label:'頭囲(cm)',data:series('headCirc'), borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
 
-    // データ期間の長さに応じて目盛り間隔を自動調整
-    const first=toDate(recs[0].date), last=toDate(recs[recs.length-1].date);
-    const monthSpan=(last.getFullYear()-first.getFullYear())*12 + (last.getMonth()-first.getMonth());
-    let tickUnit='month', stepSize=3;            // 既定: 3ヶ月間隔
-    if(monthSpan>72){ tickUnit='year'; stepSize=1; }          // 6年超 → 1年間隔
-    else if(monthSpan>36){ tickUnit='month'; stepSize=12; }   // 3〜6年 → 1年間隔
-    else if(monthSpan>18){ tickUnit='month'; stepSize=6; }    // 1.5〜3年 → 6ヶ月間隔
-    else if(monthSpan>6){ tickUnit='month'; stepSize=3; }     // 半年〜1.5年 → 3ヶ月間隔
-    else { tickUnit='month'; stepSize=1; }                    // 半年以内 → 1ヶ月間隔
+    // データ期間に応じて目盛り間隔（月数）を決定
+    const firstMs=toMs(recs[0].date), lastMs=toMs(recs[recs.length-1].date);
+    const fd=new Date(firstMs), ld=new Date(lastMs);
+    const monthSpan=(ld.getFullYear()-fd.getFullYear())*12 + (ld.getMonth()-fd.getMonth());
+    let stepMonths;
+    if(monthSpan>72) stepMonths=12;        // 6年超 → 1年
+    else if(monthSpan>36) stepMonths=12;   // 3〜6年 → 1年
+    else if(monthSpan>18) stepMonths=6;    // 1.5〜3年 → 6ヶ月
+    else if(monthSpan>6) stepMonths=3;     // 半年〜1.5年 → 3ヶ月
+    else stepMonths=1;                     // 半年以内 → 1ヶ月
+
+    // 目盛り位置（各区切り月の1日）を生成
+    const ticks=[];
+    const start=new Date(fd.getFullYear(), fd.getMonth(), 1);
+    const end=new Date(ld.getFullYear(), ld.getMonth()+1, 1);
+    for(let t=new Date(start); t<=end; t.setMonth(t.getMonth()+stepMonths)){
+      ticks.push(new Date(t).getTime());
+    }
 
     chart=new Chart(ctx,{
       type:'line',
@@ -1381,7 +1449,7 @@ const App = (() => {
           legend:{display:false},
           tooltip:{
             callbacks:{
-              // ホバー時のタイトル: 正確な測定日 yyyy年m月d日
+              // ホバー時タイトル: 正確な測定日 yyyy年m月d日
               title:(items)=>{
                 if(!items.length) return '';
                 const d=new Date(items[0].parsed.x);
@@ -1393,15 +1461,15 @@ const App = (() => {
         },
         scales:{
           x:{
-            type:'time',
-            time:{
-              unit:tickUnit,
-              stepSize:stepSize,
+            type:'linear',
+            min:start.getTime(),
+            max:end.getTime(),
+            afterBuildTicks:(axis)=>{ axis.ticks=ticks.map(v=>({value:v})); },
+            ticks:{
+              color:textColor,maxRotation:50,minRotation:0,font:{size:9},autoSkip:false,
               // 目盛りラベル: yyyy年m月
-              displayFormats:{ month:'yyyy年M月', year:'yyyy年' },
-              tooltipFormat:'yyyy年M月d日',
+              callback:(val)=>{ const d=new Date(val); return `${d.getFullYear()}年${d.getMonth()+1}月`; },
             },
-            ticks:{color:textColor,maxRotation:50,minRotation:0,font:{size:9},autoSkip:true,maxTicksLimit:8},
             grid:{color:gridColor},
           },
           y:{position:'left',ticks:{color:textColor,font:{size:10}},grid:{color:gridColor},title:{display:true,text:'身長/囲(cm)',color:textColor,font:{size:10}}},
@@ -2041,13 +2109,14 @@ const App = (() => {
             height:r.height??null, weight:r.weight??null,
             chestCirc:r.chestCirc??null, headCirc:r.headCirc??null,
             bmi:r.bmi??((r.height&&r.weight)?Math.round(r.weight/(r.height/100)**2*10)/10:null),
-            note:'',
+            note:'', createdAt:new Date().toISOString(),
           });
           added++;
         }
       });
     });
     pendingImport=null;
+    normalizeData();   // 取り込み後に型を整える
     saveData();
     closeModal('modalImport');
     renderPersonTabs(); renderGrowthList();
@@ -2073,23 +2142,24 @@ const App = (() => {
     const statusEl=document.getElementById('gasStatus');
     const connectBtn=document.getElementById('gasConnectBtn');
     const disconnectBtn=document.getElementById('gasDisconnectBtn');
-    const syncBtn=document.getElementById('btnSync');
+    const pushBtn=document.getElementById('btnPush');
+    const pullBtn=document.getElementById('btnPull');
     if(!statusEl) return;
+    const setOpacity=(v)=>{ if(pushBtn) pushBtn.style.opacity=v; if(pullBtn) pullBtn.style.opacity=v; };
     if(data.settings.gasConnected && data.settings.gasUrl){
       // 接続済み
       statusEl.innerHTML='<span style="color:var(--green)">●</span> <span style="color:var(--green)">接続済み</span>';
       connectBtn.textContent='🔄 再接続';
       connectBtn.style.display='';
       disconnectBtn.style.display='';
-      // ヘッダーの同期ボタンを有効に見せる
-      syncBtn.style.opacity='1';
+      setOpacity('1');
     }else{
       // 未接続
       statusEl.innerHTML='<span style="color:var(--text3)">○</span> <span style="color:var(--text3)">未接続</span>';
       connectBtn.textContent='🔗 接続';
       connectBtn.style.display='';
       disconnectBtn.style.display='none';
-      syncBtn.style.opacity='.5';
+      setOpacity('.5');
     }
   }
 
@@ -2116,16 +2186,16 @@ const App = (() => {
       saveData(); renderGasStatus();
       renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
       renderCategoryList(); buildHealthCatPills();
-      showToast('✅ 接続しました（同期完了）', 2600);
+      showToast('✅ 接続しました（⬇受信済み）', 2600);
     };
 
     try{
       let json=null;
-      // ── 試行1: POST（データ同期も兼ねる） ──
+      // ── 試行1: POST（pull＝受信のみ。接続時に意図せずローカルを送信しない） ──
       try{
         const res=await fetch(url,{
           method:'POST',
-          body:JSON.stringify({action:'sync',data}),
+          body:JSON.stringify({action:'pull'}),
           headers:{'Content-Type':'text/plain;charset=utf-8'},
           redirect:'follow',
         });
@@ -2133,7 +2203,6 @@ const App = (() => {
         // GASが正常ならJSON。HTML（ログイン画面等）が返る場合に備えてtextで受けてからパース
         try{ json=JSON.parse(text); }
         catch(parseErr){
-          // POSTのレスポンスがJSONでない → GETで再確認へ
           console.warn('POST応答がJSONでない:', text.slice(0,200));
           json=null;
         }
@@ -2177,32 +2246,53 @@ const App = (() => {
     showToast('🔌 連携を解除しました');
   }
 
-  /* ============================================================ GAS同期 ============================================================ */
-  async function sync(){
+  /* ============================================================ GAS送信・受信（分離） ============================================================ */
+  /* 共通: GASへPOSTしてJSONを返す（失敗時はnull＋トースト） */
+  async function gasRequest(action, includeData){
     const url=(document.getElementById('gasUrl')?.value||data.settings.gasUrl||'').trim();
-    // 未接続なら設定タブへ誘導
     if(!url || !data.settings.gasConnected){
-      showToast('先に設定タブでGASに接続してください'); switchTab('settings'); return;
+      showToast('先に設定タブでGASに接続してください'); switchTab('settings'); return null;
     }
-    data.settings.gasUrl=url; saveData();
-    const btn=document.getElementById('btnSync'); btn.classList.add('syncing');
+    data.settings.gasUrl=url;
+    const body={action};
+    if(includeData) body.data=data;   // 送信時のみdataを含める
+    // Content-Typeはtext/plainでCORSプリフライト回避
+    const res=await fetch(url,{method:'POST',body:JSON.stringify(body),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
+    const txt=await res.text();
+    try{ return JSON.parse(txt); }
+    catch(e){ showToast('失敗: 応答がJSONではありません'); return null; }
+  }
+
+  /* ⬆ 送信のみ: ローカルデータをGASへアップロード（受信・マージはしない） */
+  async function pushToGas(){
+    const btn=document.getElementById('btnPush'); btn.classList.add('busy');
     try{
-      // Content-Typeはtext/plainにしてCORSプリフライトを回避（GAS連携の必須対応）
-      const res=await fetch(url,{method:'POST',body:JSON.stringify({action:'sync',data}),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
-      const txt=await res.text();
-      let json;
-      try{ json=JSON.parse(txt); }
-      catch(e){ showToast('同期失敗: 応答がJSONではありません'); return; }
+      saveData();
+      const json=await gasRequest('push', true);
+      if(!json) return;
+      if(json.status==='ok') showToast('⬆ 送信しました '+new Date().toLocaleTimeString());
+      else showToast('送信エラー: '+(json.message||'不明'));
+    }catch(e){ showToast('送信失敗: '+(e.message||'ネットワークエラー')); }
+    finally{ btn.classList.remove('busy'); }
+  }
+
+  /* ⬇ 受信のみ: GASのデータを取得してローカルへマージ（送信はしない） */
+  async function pullFromGas(){
+    const btn=document.getElementById('btnPull'); btn.classList.add('busy');
+    try{
+      const json=await gasRequest('pull', false);
+      if(!json) return;
       if(json.status==='ok'){
         if(json.data){
-          applyMergedData(json.data);  // ID単位マージ（人物・記録の消失防止）
-          saveData(); renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+          applyMergedData(json.data);  // ID単位マージ
+          saveData();
+          renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
           renderCategoryList(); buildHealthCatPills();
         }
-        showToast('同期完了 '+new Date().toLocaleTimeString());
-      }else showToast('同期エラー: '+(json.message||'不明'));
-    }catch(e){ showToast('同期失敗: '+(e.message||'ネットワークエラー')); }
-    finally{ btn.classList.remove('syncing'); }
+        showToast('⬇ 受信しました '+new Date().toLocaleTimeString());
+      }else showToast('受信エラー: '+(json.message||'不明'));
+    }catch(e){ showToast('受信失敗: '+(e.message||'ネットワークエラー')); }
+    finally{ btn.classList.remove('busy'); }
   }
 
   /* ============================================================ ユーティリティ ============================================================ */
@@ -2224,7 +2314,7 @@ const App = (() => {
     onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
     addPerson, removePerson,
     addCategory, removeCategory, resetCategories,
-    importJSON, confirmImport, exportJSON, clearAllData, sync,
+    importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
     connectGas, disconnectGas,
     openCatFilter, applyCatFilter, catFilterSelectAll,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
