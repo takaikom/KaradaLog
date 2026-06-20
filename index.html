@@ -8,6 +8,22 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.10: カードUI調整・日本語入力対応
+    - 削除・編集・ロックボタンを横並び（左から削除→編集→ロック）に変更
+      カードの縦幅を増やさない
+    - 成長カードの数値とラベルの上下を入れ替え（ラベル上・数値下）
+    - 健康カードを3行構成に: 1行目=日付等／2行目=登録テキスト／3行目=カテゴリ等
+    - 日本語入力欄に lang="ja" inputmode="text" を付与し日本語入力モードを促す
+  v2.9: 同期方式変更・ロック個別化・全員表示・UI調整
+    - 送受信を完全上書き方式に変更。削除データはローカルのみ保持し送受信しない
+      （送信時にdeleted項目を除外、受信時はリモートで上書きしつつローカル削除分を保持）
+    - グラフ凡例: 👁/🚫アイコンを廃止し、ボタンの濃淡のみでオンオフ表現
+    - ロック機能をヘッダーから廃止し、記録ごとの🔒トグルに変更
+      （ロック中は編集・削除不可。項目単位で保護）
+    - 編集ボタンのアイコンを✏️に変更
+    - 成長画面に「全員」表示を追加（人物ごとに色分けしたグラフ＋全員分の一覧）
+      新規追加/編集時は対象人物を選択するプルダウンを表示
+    - iPhone表示揺れ・はみ出し対策（前版で適用済みを継続）
   v2.8: 表示不具合の根治・GAS送受信の分離
     - グラフの時間軸を外部date-fnsアダプタ依存から脱却（linear軸＋自前整形）。
       アダプタCDN読込失敗でグラフが落ち、一覧・保存後更新まで巻き込む問題を解消
@@ -86,7 +102,11 @@
   ============================================================
 -->
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#5b7cfa">
 <title>からだログ</title>
 <style>
 /* ============================================================
@@ -124,15 +144,29 @@
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;overflow:hidden;}
+html,body{
+  height:100%;
+  width:100%;
+  max-width:100%;
+  overflow:hidden;            /* 縦横ともページ自体はスクロールさせない（内側.mainのみスクロール） */
+  overflow-x:hidden;          /* 横スクロール完全禁止（左右揺れ防止） */
+  overscroll-behavior:none;   /* スクロール連鎖・バウンスによる揺れ防止 */
+  position:fixed;             /* iOSのアドレスバー伸縮に伴うレイアウト揺れを防止 */
+  top:0;left:0;right:0;bottom:0;
+  -webkit-text-size-adjust:100%;  /* 端末回転等での自動文字サイズ変更を無効化（はみ出し防止） */
+  text-size-adjust:100%;
+  touch-action:manipulation;  /* ダブルタップズーム無効（2本指ピンチは有効のまま） */
+}
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic UI',sans-serif;
   background:var(--bg); color:var(--text); font-size:15px; line-height:1.5;
   -webkit-tap-highlight-color:transparent;
   transition:background .25s,color .25s;
 }
-button{cursor:pointer;border:none;background:none;font-family:inherit;font-size:inherit;color:inherit;}
+button{cursor:pointer;border:none;background:none;font-family:inherit;font-size:inherit;color:inherit;touch-action:manipulation;}
 input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
+/* iOSで入力時に自動ズームしないよう、フォーム要素は最低16px（はみ出し・拡大防止） */
+input,select,textarea{font-size:16px;}
 
 /* ============================================================
    ヘッダー
@@ -140,24 +174,32 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 .header{
   position:fixed;top:0;left:0;right:0;z-index:100;height:var(--header-h);
   background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 14px;gap:8px;box-shadow:var(--shadow);
+  display:flex;align-items:center;padding:0 12px;gap:6px;box-shadow:var(--shadow);
+  max-width:100%;
 }
 .header-logo{
-  display:flex;align-items:center;gap:8px;flex:1;
+  display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;
 }
 .header-logo .logo-mark{
-  width:34px;height:34px;border-radius:10px;
+  width:34px;height:34px;border-radius:10px;flex-shrink:0;
   background:linear-gradient(135deg,var(--accent),var(--purple));
   display:flex;align-items:center;justify-content:center;font-size:18px;
   box-shadow:0 3px 10px rgba(91,124,250,.35);
 }
-.header-logo .logo-text{font-size:18px;font-weight:800;letter-spacing:.01em;}
+.header-logo .logo-text{font-size:18px;font-weight:800;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .header-logo .logo-text small{font-size:10px;font-weight:600;color:var(--text3);display:block;letter-spacing:.08em;margin-top:-3px;}
 .icon-btn{
-  width:40px;height:40px;border-radius:50%;
+  width:38px;height:38px;border-radius:50%;
   background:var(--surface2);border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;font-size:17px;
+  display:flex;align-items:center;justify-content:center;font-size:16px;
   transition:background .2s;flex-shrink:0;
+}
+/* 狭い画面ではアイコンとロゴをさらに圧縮してはみ出しを防ぐ */
+@media (max-width:380px){
+  .header{padding:0 8px;gap:4px;}
+  .icon-btn{width:34px;height:34px;font-size:15px;}
+  .header-logo .logo-mark{width:30px;height:30px;font-size:16px;}
+  .header-logo .logo-text{font-size:16px;}
 }
 .icon-btn:hover{background:var(--border);}
 .icon-btn.btn-lock.locked{background:var(--orange-soft);border-color:var(--orange);color:var(--orange);}
@@ -193,11 +235,18 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
    ============================================================ */
 .main{
   position:fixed;top:calc(var(--header-h) + var(--tab-h));bottom:0;left:0;right:0;
-  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;   /* 上下端でのバウンス連鎖を抑制 */
+  width:100%;max-width:100%;
 }
-.page{display:none;min-height:100%;padding:16px 16px 90px;}
+.page{display:none;min-height:100%;padding:16px 16px 90px;max-width:100%;overflow-x:hidden;}
 .page.active{display:block;}
 @media (min-width:760px){ .page{max-width:720px;margin:0 auto;} }
+/* 全ての行コンテナで子要素のはみ出しを防ぐ（横揺れ・はみ出し対策） */
+.form-row,.summary-bar,.person-tabs,.chart-legend,.record-vals,.filter-bar{max-width:100%;}
+.record-item,.health-item,.card,.settings-card{max-width:100%;overflow:hidden;}
+/* 長い文字列での横はみ出し防止 */
+.health-body,.note-body,.setting-label,.health-name{overflow-wrap:anywhere;word-break:break-word;}
 
 /* ============================================================
    カード／タイトル
@@ -246,12 +295,11 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
   border:1.5px solid var(--border);background:var(--surface2);color:var(--text3);
   transition:all .15s;
 }
-.legend-chip .lc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
-/* 表示ON状態：色付き枠＋濃い文字、OFF状態：薄いグレー（取り消し線は使わない） */
-.legend-chip.on{background:var(--surface);color:var(--text);}
-.legend-chip.off{opacity:.45;}
+.legend-chip .lc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;transition:background .15s;}
+/* ON: 濃い（色付き背景・濃い文字・実線枠）。OFF: 薄い（淡色・グレー文字） */
+.legend-chip.on{background:var(--accent-soft);color:var(--text);border-color:var(--accent);opacity:1;}
+.legend-chip.off{background:var(--surface2);color:var(--text3);border-color:var(--border);opacity:.5;}
 .legend-chip.off .lc-dot{background:var(--text3)!important;}
-.legend-chip .lc-eye{font-size:11px;}
 
 .chart-wrap{position:relative;width:100%;height:220px;margin-top:4px;}
 .chart-wrap canvas{width:100%!important;height:100%!important;}
@@ -291,6 +339,21 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 .habit-hover-edit:active{transform:scale(.9);}
 /* タッチ端末でも常時表示 */
 @media (hover:none){.habit-hover-edit{opacity:1;pointer-events:auto;}}
+/* 項目ごとのロックボタン */
+.item-lock{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface2);font-size:13px;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,transform .1s;
+}
+.item-lock:active{transform:scale(.9);}
+.item-lock.on{background:var(--orange-soft);border-color:var(--orange);}
+/* ボタン横並び（左から: 削除・編集・ロック）。カードの縦幅を広げない */
+.item-btn-row{display:flex;flex-direction:row;gap:6px;flex-shrink:0;align-items:center;}
+/* ロック中アイテムの見た目（編集不可を示す） */
+.record-item.locked,.health-item.locked{background:var(--orange-soft);}
+.record-item.locked .habit-hover-edit,.health-item.locked .habit-hover-edit,
+.record-item.locked .habit-hover-del,.health-item.locked .habit-hover-del{opacity:.3;}
 
 .record-item{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
@@ -299,7 +362,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 .record-item.deleted{opacity:.45;background:var(--surface2);}
 .record-date{font-size:12px;color:var(--text3);font-weight:700;min-width:96px;}
 .record-vals{flex:1;display:flex;flex-wrap:wrap;gap:8px 12px;}
-.record-val{display:flex;flex-direction:column;font-size:11px;color:var(--text3);font-weight:600;}
+.record-val{display:flex;flex-direction:column-reverse;font-size:11px;color:var(--text3);font-weight:600;}
 .record-val span{font-size:15px;font-weight:800;color:var(--text);}
 .record-age{font-size:10px;color:var(--accent);background:var(--accent-soft);border-radius:10px;padding:2px 8px;align-self:flex-start;font-weight:700;}
 
@@ -314,12 +377,14 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
   width:34px;height:34px;border-radius:10px;display:flex;align-items:center;
   justify-content:center;font-size:17px;flex-shrink:0;
 }
-.health-info{flex:1;min-width:0;}
+.health-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
 .health-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.health-name-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.health-tag-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:1px;}
 .health-name{font-weight:700;font-size:14px;}
 .health-cat{font-size:10px;border-radius:7px;padding:2px 7px;font-weight:700;}
-.health-meta{font-size:12px;color:var(--text3);margin-top:2px;}
-.health-body{font-size:13px;color:var(--text2);margin-top:3px;white-space:pre-wrap;word-break:break-word;}
+.health-meta{font-size:12px;color:var(--text3);}
+.health-body{font-size:13px;color:var(--text2);white-space:pre-wrap;word-break:break-word;}
 .health-status-badge{font-size:10px;border-radius:6px;padding:2px 7px;font-weight:700;}
 
 /* ============================================================
@@ -532,7 +597,6 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
   </div>
   <button class="icon-btn btn-push" id="btnPush" title="送信（アップロード）" onclick="App.pushToGas()">⬆</button>
   <button class="icon-btn btn-pull" id="btnPull" title="受信（ダウンロード）" onclick="App.pullFromGas()">⬇</button>
-  <button class="icon-btn btn-lock" id="btnLock" title="編集ロック" onclick="App.toggleLock()">🔓</button>
   <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
 </header>
 
@@ -600,7 +664,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
         <div class="form-field" style="flex:1.3">
           <label>名前</label>
           <div class="form-input-wrap" id="wrap_pname">
-            <input type="text" class="form-input" id="newPersonName" placeholder="名前を入力"
+            <input type="text" class="form-input" id="newPersonName" inputmode="text" lang="ja" autocapitalize="off" placeholder="名前を入力"
               oninput="App.fieldUpdate('pname')">
             <button class="btn-clear-field" onclick="App.clearField('newPersonName','pname')">✕</button>
           </div>
@@ -639,7 +703,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
         <div class="form-field" style="flex:1.3">
           <label>カテゴリ名</label>
           <div class="form-input-wrap" id="wrap_catname">
-            <input type="text" class="form-input" id="newCatName" placeholder="カテゴリ名を入力"
+            <input type="text" class="form-input" id="newCatName" inputmode="text" lang="ja" autocapitalize="off" placeholder="カテゴリ名を入力"
               oninput="App.fieldUpdate('catname')">
             <button class="btn-clear-field" onclick="App.clearField('newCatName','catname')">✕</button>
           </div>
@@ -712,6 +776,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
 <div class="modal-overlay" id="modalGrowth">
   <div class="modal-sheet">
     <div class="modal-title"><span id="modalGrowthTitle">📏 成長記録を追加</span><button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
+    <!-- 対象人物（全員表示中の新規追加時などに使用） -->
+    <div class="form-row" id="growthPersonRow" style="display:none">
+      <div class="form-field" style="flex:1">
+        <label>対象の人物</label>
+        <select class="form-input" id="g_person"></select>
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-field" style="flex:1">
         <label>日付</label>
@@ -770,7 +841,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
       <div class="form-field" style="flex:1">
         <label>メモ</label>
         <div class="form-input-wrap" id="wrap_gnote">
-          <input type="text" class="form-input" id="g_note" placeholder="任意のメモ"
+          <input type="text" class="form-input" id="g_note" inputmode="text" lang="ja" autocapitalize="off" placeholder="任意のメモ"
             oninput="App.fieldUpdate('gnote')" onkeydown="App.formKeyDown(event,'modalGrowth')">
           <button class="btn-clear-field" onclick="App.clearField('g_note','gnote')">✕</button>
         </div>
@@ -796,7 +867,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
       <div class="form-field" style="flex:1">
         <label id="healthNameLabel">項目名</label>
         <div class="form-input-wrap" id="wrap_hname">
-          <input type="text" class="form-input" id="h_name" placeholder="例: インフルエンザ予防接種"
+          <input type="text" class="form-input" id="h_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: インフルエンザ予防接種"
             oninput="App.fieldUpdate('hname')" onkeydown="App.formKeyDown(event,'modalHealth')">
           <button class="btn-clear-field" onclick="App.clearField('h_name','hname')">✕</button>
         </div>
@@ -840,7 +911,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
       <div class="form-field" style="flex:1">
         <label>内容・備考</label>
         <div class="form-input-wrap" id="wrap_hbody">
-          <textarea class="form-input" id="h_body" rows="3" style="resize:vertical" placeholder="症状・経過・医院名など..."
+          <textarea class="form-input" id="h_body" inputmode="text" lang="ja" autocapitalize="off" rows="3" style="resize:vertical" placeholder="症状・経過・医院名など..."
             oninput="App.fieldUpdate('hbody')" onkeydown="App.healthBodyKeyDown(event)"></textarea>
           <button class="btn-clear-field" style="top:9px" onclick="App.clearField('h_body','hbody')">✕</button>
         </div>
@@ -909,7 +980,7 @@ const App = (() => {
     growth: [],
     healthRecords: [],
     categories: [],   // 健康カテゴリ（空ならDEFAULT_CATEGORIESを使用）
-    settings: { gasUrl:'', gasConnected:false, darkMode:false, locked:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
+    settings: { gasUrl:'', gasConnected:false, darkMode:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
   };
 
   /* ── UI状態 ── */
@@ -950,7 +1021,6 @@ const App = (() => {
   function init(){
     loadData();
     applyDarkMode();
-    applyLock();
     buildDateSelects();           // 各日付セレクトを構築
     buildHealthCatPills();        // モーダルのカテゴリピル
     renderPersonTabs();
@@ -999,15 +1069,38 @@ const App = (() => {
     return [...map.values()];
   }
 
-  /* GAS応答データをローカルへID単位マージして反映 */
+  /* ============================================================ 受信反映（完全上書き＋ローカル削除データ保持） ============================================================
+     方針:
+     - 受信は「削除済みを除くデータ」を完全上書きする（リモートが正）。
+     - ローカルにのみ存在する削除済み(deleted:true)アイテムは保持し、上書きされない。
+     - リモートには削除データは入っていない前提（送信時に除外しているため）。 */
   function applyMergedData(remote){
     if(!remote) return;
-    data.persons       = mergeById(data.persons,       remote.persons,       'id');
-    data.growth        = mergeById(data.growth,        remote.growth,        'id');
-    data.healthRecords = mergeById(data.healthRecords, remote.healthRecords, 'id');
-    // カテゴリはkey単位。リモートが空なら現状維持
+    // ローカルの削除済みアイテムを退避
+    const keepDeleted = arr => (Array.isArray(arr)?arr:[]).filter(r=>r.deleted);
+    const delPersons = keepDeleted(data.persons);
+    const delGrowth  = keepDeleted(data.growth);
+    const delHealth  = keepDeleted(data.healthRecords);
+
+    // リモートデータで完全上書き（リモートが無い場合は空に）
+    const remoteActive = arr => (Array.isArray(arr)?arr:[]).filter(r=>!r.deleted);
+    data.persons       = remoteActive(remote.persons);
+    data.growth        = remoteActive(remote.growth);
+    data.healthRecords = remoteActive(remote.healthRecords);
+
+    // ローカルの削除済みを戻す（同一IDがリモート側にも来ていたらローカル削除を優先＝重複排除）
+    const reattach = (active, deleted, idKey) => {
+      const ids = new Set(active.map(r=>String(r[idKey])));
+      deleted.forEach(d=>{ if(!ids.has(String(d[idKey]))) active.push(d); });
+      return active;
+    };
+    data.persons       = reattach(data.persons, delPersons, 'id');
+    data.growth        = reattach(data.growth,  delGrowth,  'id');
+    data.healthRecords = reattach(data.healthRecords, delHealth, 'id');
+
+    // カテゴリはkey単位で完全上書き（リモートが空なら現状維持）
     if(remote.categories && remote.categories.length){
-      data.categories = mergeById(data.categories, remote.categories, 'key');
+      data.categories = remote.categories.slice();
     }
     normalizeData();  // 型を整える（dateを文字列化、数値を数値化）
   }
@@ -1097,14 +1190,6 @@ const App = (() => {
     document.getElementById('btnMode').textContent = data.settings.darkMode ? '☀️' : '🌙';
     if(chart) renderChart();
   }
-  function toggleLock(){ data.settings.locked = !data.settings.locked; applyLock(); saveData(); }
-  function applyLock(){
-    const l = !!data.settings.locked;
-    const b = document.getElementById('btnLock');
-    b.textContent = l ? '🔒' : '🔓';
-    b.classList.toggle('locked', l);
-    document.getElementById('fab').classList.toggle('hidden', l);
-  }
 
   /* ============================================================ タブ切替（スクロール位置維持） ============================================================ */
   function switchTab(tab){
@@ -1114,7 +1199,7 @@ const App = (() => {
     document.getElementById('page-'+tab).classList.add('active');
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     // FAB: 設定タブでは隠す
-    document.getElementById('fab').classList.toggle('hidden', tab === 'settings' || data.settings.locked);
+    document.getElementById('fab').classList.toggle('hidden', tab === 'settings');
     requestAnimationFrame(() => { document.getElementById('main').scrollTop = scrollPositions[tab] || 0; });
     if(tab === 'growth') renderChart();
   }
@@ -1226,7 +1311,12 @@ const App = (() => {
   /* 成長モーダルの月齢プレビュー（誕生日から自動算出） */
   function updateGrowthAgePreview(){
     const el = document.getElementById('growthAgePreview');
-    const person = data.persons.find(p => p.id === currentPersonId);
+    // 人物選択行が表示されていればその値を、なければcurrentPersonIdを使う
+    const sel=document.getElementById('g_person');
+    const row=document.getElementById('growthPersonRow');
+    const pid = (row && row.style.display!=='none' && sel) ? sel.value
+              : (currentPersonId==='all' ? (sel?.value || data.persons[0]?.id) : currentPersonId);
+    const person = data.persons.find(p => p.id === pid);
     const date = getDateISO('gd');
     if(person && person.birthDate && date){
       const age = calcAge(person.birthDate, date);
@@ -1242,24 +1332,31 @@ const App = (() => {
   function renderPersonTabs(){
     if(!currentPersonId && data.persons.length>0) currentPersonId = data.persons[0].id;
 
-    // 成長タブの人物切替（全員ボタンは無し＝1人ずつグラフ表示）
+    // 成長タブの人物切替（「全員」＋各人物）
     const gEl = document.getElementById('growthPersonTabs');
     gEl.innerHTML='';
     if(data.persons.length===0){
       gEl.innerHTML='<span style="font-size:13px;color:var(--text3)">設定タブから人物を追加してください</span>';
     }else{
+      // 全員ボタン（複数人を同時表示）
+      const allBtn=document.createElement('button');
+      allBtn.className='person-tab'+(currentPersonId==='all'?' active':'');
+      allBtn.textContent='全員';
+      allBtn.addEventListener('click', ()=>{
+        currentPersonId='all';
+        renderPersonTabs(); renderGrowthList();
+      });
+      gEl.appendChild(allBtn);
       data.persons.forEach(p=>{
         const btn=document.createElement('button');
         btn.className='person-tab'+(currentPersonId===p.id?' active':'');
         const latestDate = latestGrowthDate(p.id);
         const ageStr = (p.birthDate && latestDate) ? calcAge(p.birthDate, latestDate) : '';
         btn.innerHTML = `${escHtml(p.name)}${ageStr?`<span class="pt-age"> ${ageStr}</span>`:''}`;
-        // onclickを直接バインド（不具合修正：addEventListenerで確実に）
         btn.addEventListener('click', ()=>{
           currentPersonId = p.id;
           renderPersonTabs();
           renderGrowthList();
-          renderChart();
         });
         gEl.appendChild(btn);
       });
@@ -1293,7 +1390,8 @@ const App = (() => {
 
   /* ============================================================ 成長リスト・サマリー ============================================================ */
   function renderGrowthList(){
-    let records = data.growth.filter(r=>!r.deleted && r.personId===currentPersonId);
+    const showAll = currentPersonId==='all';
+    let records = data.growth.filter(r=>!r.deleted && (showAll || r.personId===currentPersonId));
     records.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
     const list=document.getElementById('growthList');
     const empty=document.getElementById('growthEmpty');
@@ -1306,24 +1404,27 @@ const App = (() => {
     }
     empty.style.display='none';
     // 先にリストを描画（グラフが失敗しても一覧は必ず出す）
-    const person=data.persons.find(p=>p.id===currentPersonId);
-    records.forEach(r=> list.appendChild(buildGrowthItem(r, person)));
-    renderSummary(records);
+    records.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      list.appendChild(buildGrowthItem(r, person, showAll));
+    });
+    // サマリーは単一人物のときのみ（全員では出さない）
+    renderSummary(showAll ? [] : records);
     renderLegend();
-    // グラフは最後に。失敗しても一覧表示は維持する
     try{ renderChart(); }catch(e){ console.warn('renderChart skip:', e.message); }
   }
 
-  function buildGrowthItem(r, person){
+  function buildGrowthItem(r, person, showName){
     const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
     const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
     del.addEventListener('click',()=>softDelete('growth',r.id));
     const ageStr=(person&&person.birthDate)?calcAge(person.birthDate, r.date):'';
-    const item=document.createElement('div'); item.className='record-item';
+    const item=document.createElement('div'); item.className='record-item'+(r.locked?' locked':'');
     item.style.cursor='pointer';
     item.innerHTML=`
       <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
         <div class="record-date">${formatDateJP(r.date)}</div>
+        ${showName && person?`<div style="font-size:11px;color:var(--accent);font-weight:700">${escHtml(person.name)}</div>`:''}
         ${ageStr?`<div class="record-age">${ageStr}</div>`:''}
       </div>
       <div class="record-vals">
@@ -1333,22 +1434,32 @@ const App = (() => {
         ${r.chestCirc!=null?`<div class="record-val"><span>${r.chestCirc}</span>胸囲cm</div>`:''}
         ${r.headCirc!=null?`<div class="record-val"><span>${r.headCirc}</span>頭囲cm</div>`:''}
       </div>
-      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
-      <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-        <button class="habit-hover-edit" title="編集">✎</button>
+      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
+      <div class="item-btn-row">
         <button class="habit-hover-del">✕</button>
+        <button class="habit-hover-edit" title="編集">✏️</button>
+        <button class="item-lock${r.locked?' on':''}" title="ロック">${r.locked?'🔒':'🔓'}</button>
       </div>
     `;
-    // アイテム本体タップで編集（ボタン類のクリックは除外）
     item.addEventListener('click', e=>{
-      if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')) return;
+      if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')) return;
       openEditGrowth(r.id);
     });
+    item.querySelector('.item-lock').addEventListener('click',()=>toggleItemLock('growth',r.id));
     item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditGrowth(r.id));
     item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('growth',r.id));
     attachSwipe(wrap, del, ()=>softDelete('growth',r.id));
     wrap.appendChild(del); wrap.appendChild(item);
     return wrap;
+  }
+
+  /* 項目ごとのロック切替（ロック中は編集・削除不可） */
+  function toggleItemLock(type,id){
+    const r=data[type].find(x=>x.id===id); if(!r) return;
+    r.locked=!r.locked;
+    r.updatedAt=new Date().toISOString();
+    saveData(); renderGrowthList(); renderHealthList();
+    showToast(r.locked?'🔒 ロックしました':'🔓 ロック解除しました');
   }
 
   function renderSummary(records){
@@ -1381,8 +1492,8 @@ const App = (() => {
       const on=!!data.settings.chartVisible[m.key];
       const chip=document.createElement('button');
       chip.className='legend-chip '+(on?'on':'off');
-      // ON/OFFは目アイコンで明示（取り消し線ではなく）
-      chip.innerHTML=`<span class="lc-dot" style="background:${m.color}"></span>${m.label}<span class="lc-eye">${on?'👁':'🚫'}</span>`;
+      // ON/OFFはボタンの濃さ（CSSのopacity/色）のみで表現。アイコンは付けない。
+      chip.innerHTML=`<span class="lc-dot" style="background:${m.color}"></span>${m.label}`;
       chip.addEventListener('click',()=>{
         data.settings.chartVisible[m.key]=!data.settings.chartVisible[m.key];
         saveData();
@@ -1400,7 +1511,8 @@ const App = (() => {
     const ctx=document.getElementById('chartCanvas');
     if(!ctx) return;
     if(chart){ try{chart.destroy();}catch(e){} chart=null; }
-    let recs=data.growth.filter(r=>!r.deleted && r.personId===currentPersonId && r.date && /^\d{4}-\d{2}-\d{2}/.test(String(r.date)));
+    const showAll = currentPersonId==='all';
+    let recs=data.growth.filter(r=>!r.deleted && (showAll || r.personId===currentPersonId) && r.date && /^\d{4}-\d{2}-\d{2}/.test(String(r.date)));
     recs.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     if(recs.length===0) return;
     if(typeof Chart==='undefined') return;  // Chart.js未ロードでも他描画は止めない
@@ -1411,14 +1523,32 @@ const App = (() => {
 
     // 日付文字列→エポックms
     const toMs = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d).getTime(); };
-    const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date), y:r[key]}));
-
     const vis=data.settings.chartVisible;
     const datasets=[];
-    if(vis.height)    datasets.push({label:'身長(cm)',data:series('height'),   borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5});
-    if(vis.weight)    datasets.push({label:'体重(kg)',data:series('weight'),   borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
-    if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:series('chestCirc'),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
-    if(vis.headCirc)  datasets.push({label:'頭囲(cm)',data:series('headCirc'), borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+
+    // 人物ごとの色パレット（全員表示用）
+    const personColors=['#5b7cfa','#22b765','#f0980b','#9c5cf5','#ec4899','#10b3c6','#e24b4a','#8b5cf6'];
+
+    if(showAll){
+      // 全員表示：人物ごとに色分け。指標は身長(実線)・体重(破線)を表示
+      data.persons.forEach((p,i)=>{
+        const pr=recs.filter(r=>r.personId===p.id);
+        if(pr.length===0) return;
+        const col=personColors[i%personColors.length];
+        const ser=(key)=>pr.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date),y:r[key]}));
+        if(vis.height) datasets.push({label:`${p.name} 身長`,data:ser('height'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5});
+        if(vis.weight) datasets.push({label:`${p.name} 体重`,data:ser('weight'),borderColor:col,backgroundColor:'transparent',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[5,3]});
+        if(vis.chestCirc) datasets.push({label:`${p.name} 胸囲`,data:ser('chestCirc'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2,borderDash:[2,2]});
+        if(vis.headCirc) datasets.push({label:`${p.name} 頭囲`,data:ser('headCirc'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2,borderDash:[1,2]});
+      });
+    }else{
+      // 単一人物：指標ごとに色分け
+      const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date), y:r[key]}));
+      if(vis.height)    datasets.push({label:'身長(cm)',data:series('height'),   borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5});
+      if(vis.weight)    datasets.push({label:'体重(kg)',data:series('weight'),   borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
+      if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:series('chestCirc'),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+      if(vis.headCirc)  datasets.push({label:'頭囲(cm)',data:series('headCirc'), borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    }
 
     // データ期間に応じて目盛り間隔（月数）を決定
     const firstMs=toMs(recs[0].date), lastMs=toMs(recs[recs.length-1].date);
@@ -1446,7 +1576,7 @@ const App = (() => {
         responsive:true,maintainAspectRatio:false,
         interaction:{mode:'nearest',axis:'x',intersect:false},
         plugins:{
-          legend:{display:false},
+          legend:{ display: showAll, position:'bottom', labels:{color:textColor,font:{size:10},boxWidth:18,padding:8} },
           tooltip:{
             callbacks:{
               // ホバー時タイトル: 正確な測定日 yyyy年m月d日
@@ -1515,7 +1645,7 @@ const App = (() => {
       const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
       const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
       del.addEventListener('click',()=>softDelete('healthRecords',r.id));
-      const item=document.createElement('div'); item.className='health-item';
+      const item=document.createElement('div'); item.className='health-item'+(r.locked?' locked':'');
       item.style.cursor='pointer';
       const ageStr=(person&&person.birthDate&&r.date)?calcAge(person.birthDate,r.date):'';
       const statusBadge = r.category==='ワクチン'
@@ -1524,26 +1654,31 @@ const App = (() => {
             : `<span class="health-status-badge" style="background:var(--green-soft);color:var(--green)">接種済</span>`)
         : '';
       item.innerHTML=`
-        <div class="health-icon" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon}</div>
         <div class="health-info">
-          <div class="health-title-row">
+          <!-- 1行目: 日付・人物・月齢 -->
+          <div class="health-meta">${r.date?formatDateJP(r.date):'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
+          <!-- 2行目: 登録テキスト（項目名＋本文） -->
+          <div class="health-name-row">
             <span class="health-name">${escHtml(r.name||r.category)}${r.dose?` <span style="font-size:11px;color:var(--text3)">${r.dose}回目</span>`:''}</span>
-            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${r.category}</span>
+          </div>
+          ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
+          <!-- 3行目: カテゴリ・状態 -->
+          <div class="health-tag-row">
+            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon} ${r.category}</span>
             ${statusBadge}
           </div>
-          <div class="health-meta">${r.date?formatDateJP(r.date):'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
-          ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
         </div>
-        <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start">
-          <button class="habit-hover-edit" title="編集">✎</button>
+        <div class="item-btn-row" style="align-self:flex-start">
           <button class="habit-hover-del">✕</button>
+          <button class="habit-hover-edit" title="編集">✏️</button>
+          <button class="item-lock${r.locked?' on':''}" title="ロック">${r.locked?'🔒':'🔓'}</button>
         </div>
       `;
-      // アイテム本体タップで編集
       item.addEventListener('click', e=>{
-        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')) return;
+        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')) return;
         openEditHealth(r.id);
       });
+      item.querySelector('.item-lock').addEventListener('click',()=>toggleItemLock('healthRecords',r.id));
       item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditHealth(r.id));
       item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('healthRecords',r.id));
       attachSwipe(wrap, del, ()=>softDelete('healthRecords',r.id));
@@ -1558,7 +1693,9 @@ const App = (() => {
   /* ポップオーバーをボタン下に配置 */
   function positionPop(pop, btn){
     const r=btn.getBoundingClientRect();
-    pop.style.left = Math.min(r.left, window.innerWidth-300) + 'px';
+    // 画面左右にはみ出さないようクランプ（最小8px、右端も考慮）
+    const left=Math.max(8, Math.min(r.left, window.innerWidth-288));
+    pop.style.left = left + 'px';
     pop.style.top = (r.bottom+6) + 'px';
   }
 
@@ -1635,8 +1772,8 @@ const App = (() => {
 
   /* ============================================================ 削除（2段階） ============================================================ */
   function softDelete(type,id){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     const rec=data[type].find(r=>r.id===id); if(!rec) return;
+    if(rec.locked){ showToast('🔒 ロック中の項目は削除できません'); return; }
     rec.deleted=true; rec.deletedAt=new Date().toISOString();
     saveData(); renderGrowthList(); renderHealthList(); renderTrash();
     showToast('削除しました（設定→ゴミ箱から復元可）');
@@ -1704,11 +1841,13 @@ const App = (() => {
   }
 
   function openAddModal(){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
     if(currentTab==='growth'){
       editingGrowthId=null;  // 新規モード
       document.getElementById('modalGrowthTitle').textContent='📏 成長記録を追加';
+      // 人物選択を構築（全員表示中は選択必須、単一表示中はその人物を既定）
+      buildGrowthPersonSelect(currentPersonId==='all' ? (data.persons[0]?.id) : currentPersonId);
+      document.getElementById('growthPersonRow').style.display = (currentPersonId==='all') ? '' : 'none';
       resetGrowthForm(); updateGrowthAgePreview(); openModal('modalGrowth');
     }
     else if(currentTab==='health'){
@@ -1718,15 +1857,30 @@ const App = (() => {
     }
   }
 
+  /* 成長モーダルの人物セレクトを構築 */
+  function buildGrowthPersonSelect(selectedId){
+    const sel=document.getElementById('g_person');
+    if(!sel) return;
+    sel.innerHTML='';
+    data.persons.forEach(p=>{
+      const o=document.createElement('option'); o.value=p.id; o.textContent=p.name;
+      sel.appendChild(o);
+    });
+    if(selectedId) sel.value=selectedId;
+    // 人物変更で月齢プレビューを更新
+    sel.onchange=()=>updateGrowthAgePreview();
+  }
+
   /* ============================================================ 編集モードでモーダルを開く ============================================================ */
   /* 成長記録を編集 */
   function openEditGrowth(id){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     const r=data.growth.find(x=>x.id===id); if(!r) return;
+    if(r.locked){ showToast('🔒 ロック中の項目は編集できません'); return; }
     editingGrowthId=id;  // 編集モード
-    // 編集対象が別人物の記録でも、その人物に切り替えて編集
-    if(r.personId!==currentPersonId){ currentPersonId=r.personId; renderPersonTabs(); }
     document.getElementById('modalGrowthTitle').textContent='📏 成長記録を編集';
+    // 人物選択を表示し、対象人物を選択状態にする（全員表示でもタブを壊さない）
+    buildGrowthPersonSelect(r.personId);
+    document.getElementById('growthPersonRow').style.display='';
     // 既存値をフォームへ
     setDate('gd', r.date);
     document.getElementById('g_height').value = r.height!=null?r.height:'';
@@ -1741,8 +1895,8 @@ const App = (() => {
 
   /* 健康記録を編集 */
   function openEditHealth(id){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     const r=data.healthRecords.find(x=>x.id===id); if(!r) return;
+    if(r.locked){ showToast('🔒 ロック中の項目は編集できません'); return; }
     editingHealthId=id;  // 編集モード
     document.getElementById('modalHealthTitle').textContent='🩺 健康記録を編集';
     // カテゴリ復元
@@ -1836,10 +1990,8 @@ const App = (() => {
 
   /* ============================================================ 保存（新規追加 / 編集更新の両対応） ============================================================ */
   function saveGrowth(){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     const date=getDateISO('gd');
     if(!date){ showToast('日付を選択してください'); return; }
-    if(!currentPersonId){ showToast('人物を選択してください'); return; }
     const h=parseFloat(document.getElementById('g_height').value)||null;
     const w=parseFloat(document.getElementById('g_weight').value)||null;
     const bmi=(h&&w)?Math.round(w/(h/100)**2*10)/10:null;
@@ -1851,14 +2003,23 @@ const App = (() => {
       // ── 編集：既存レコードを更新 ──
       const r=data.growth.find(x=>x.id===editingGrowthId);
       if(r){
-        Object.assign(r,{ date, height:h, weight:w, chestCirc, headCirc, bmi, note, updatedAt:new Date().toISOString() });
+        // 編集時も人物変更を反映
+        const sel=document.getElementById('g_person');
+        const pid = sel?.value || r.personId;
+        Object.assign(r,{ personId:pid, date, height:h, weight:w, chestCirc, headCirc, bmi, note, updatedAt:new Date().toISOString() });
       }
       editingGrowthId=null;
       saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('更新しました');
     }else{
       // ── 新規追加 ──
+      // 対象人物: 人物選択行が出ていればその値、なければcurrentPersonId（全員なら先頭）
+      const row=document.getElementById('growthPersonRow');
+      const sel=document.getElementById('g_person');
+      let personId = (row && row.style.display!=='none' && sel) ? sel.value
+                   : (currentPersonId==='all' ? (data.persons[0]?.id) : currentPersonId);
+      if(!personId){ showToast('人物を選択してください'); return; }
       data.growth.push({
-        id:uid(), personId:currentPersonId, date,
+        id:uid(), personId, date,
         height:h, weight:w, chestCirc, headCirc, bmi, note,
         createdAt:new Date().toISOString(),
       });
@@ -1867,7 +2028,6 @@ const App = (() => {
   }
 
   function saveHealth(){
-    if(data.settings.locked){ showToast('編集ロック中'); return; }
     const name=document.getElementById('h_name').value.trim();
     const body=document.getElementById('h_body').value.trim();
     if(!name && !body){ showToast('項目名か内容を入力してください'); return; }
@@ -2255,7 +2415,17 @@ const App = (() => {
     }
     data.settings.gasUrl=url;
     const body={action};
-    if(includeData) body.data=data;   // 送信時のみdataを含める
+    if(includeData){
+      // 送信データ：削除済み(deleted:true)は除外し、有効なデータのみGASへ送る
+      // （削除データはローカルのみに保持する仕様）
+      const active = arr => (Array.isArray(arr)?arr:[]).filter(r=>!r.deleted);
+      body.data = {
+        persons: active(data.persons),
+        growth: active(data.growth),
+        healthRecords: active(data.healthRecords),
+        categories: data.categories || [],
+      };
+    }
     // Content-Typeはtext/plainでCORSプリフライト回避
     const res=await fetch(url,{method:'POST',body:JSON.stringify(body),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
     const txt=await res.text();
@@ -2270,7 +2440,10 @@ const App = (() => {
       saveData();
       const json=await gasRequest('push', true);
       if(!json) return;
-      if(json.status==='ok') showToast('⬆ 送信しました '+new Date().toLocaleTimeString());
+      if(json.status==='ok'){
+        const c=json.counts||{};
+        showToast(`⬆ 送信: 人物${c.persons??'?'} 成長${c.growth??'?'} 健康${c.healthRecords??'?'}`, 2800);
+      }
       else showToast('送信エラー: '+(json.message||'不明'));
     }catch(e){ showToast('送信失敗: '+(e.message||'ネットワークエラー')); }
     finally{ btn.classList.remove('busy'); }
@@ -2285,11 +2458,19 @@ const App = (() => {
       if(json.status==='ok'){
         if(json.data){
           applyMergedData(json.data);  // ID単位マージ
+          // 受信後、選択中の人物が消えていたら有効な人物を選び直す
+          if(!currentPersonId || !data.persons.some(p=>p.id===currentPersonId)){
+            currentPersonId = data.persons[0]?.id || null;
+          }
           saveData();
           renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
           renderCategoryList(); buildHealthCatPills();
+          // 受信件数を表示（同期できているか可視化）
+          const np=data.persons.length, ng=data.growth.filter(r=>!r.deleted).length, nh=data.healthRecords.filter(r=>!r.deleted).length;
+          showToast(`⬇ 受信: 人物${np} 成長${ng} 健康${nh}`, 2800);
+        }else{
+          showToast('⬇ 受信しましたがデータが空です', 2800);
         }
-        showToast('⬇ 受信しました '+new Date().toLocaleTimeString());
       }else showToast('受信エラー: '+(json.message||'不明'));
     }catch(e){ showToast('受信失敗: '+(e.message||'ネットワークエラー')); }
     finally{ btn.classList.remove('busy'); }
@@ -2306,10 +2487,10 @@ const App = (() => {
   document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('open'); }));
 
   return {
-    init, toggleDark, toggleLock, switchTab,
+    init, toggleDark, switchTab,
     openAddModal, closeModal, saveGrowth, saveHealth,
     openEditGrowth, openEditHealth,
-    softDelete, restoreItem, purgeItem, restoreAll, purgeAll,
+    softDelete, restoreItem, purgeItem, restoreAll, purgeAll, toggleItemLock,
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
     onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
     addPerson, removePerson,
