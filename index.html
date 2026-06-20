@@ -8,6 +8,10 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.13: 健康カード並び修正・アプリ更新ボタン追加
+    - 健康カードを 日付／登録テキスト／カテゴリ等 の順に修正（テキスト上・カテゴリ下）
+    - 設定画面のGAS連携とデータの間に「アプリ更新」ボタンを追加
+      （キャッシュ消去→再読み込み。記録データは保持）
   v2.12: 健康カード並び替え・カレンダー修正
     - 健康カードを1行目=日付／2行目=カテゴリ等／3行目=登録テキスト に変更
     - 左端のカテゴリアイコン表示を復活
@@ -754,6 +758,18 @@ input,select,textarea{font-size:16px;}
       <div class="form-actions" style="justify-content:flex-start">
         <button class="btn-primary" id="gasConnectBtn" onclick="App.connectGas()">🔗 接続</button>
         <button class="btn-secondary" id="gasDisconnectBtn" onclick="App.disconnectGas()" style="display:none;color:var(--red);border-color:var(--red)">🔌 解除</button>
+      </div>
+    </div>
+
+    <!-- アプリ更新 -->
+    <div class="section-title">🔄 アプリ更新</div>
+    <div class="settings-card">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">最新版に更新</div>
+          <div class="setting-desc">キャッシュを消去して最新のアプリを再読み込みします</div>
+        </div>
+        <button class="btn-secondary" onclick="App.updateApp()">🔄 更新</button>
       </div>
     </div>
 
@@ -2448,6 +2464,29 @@ const App = (() => {
     showToast('🔌 連携を解除しました');
   }
 
+  /* ============================================================ アプリ更新（キャッシュ消去→再読み込み） ============================================================
+     PWAのService Workerキャッシュを消して最新のapp(index.html等)を取り直す。
+     ローカルデータ(localStorage)は消さない。 */
+  async function updateApp(){
+    if(!confirm('最新版に更新します。\n（記録データは消えません）')) return;
+    showToast('更新を確認しています...');
+    try{
+      // Service Workerのキャッシュを全削除
+      if('caches' in window){
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      // Service Worker自体も更新を促す
+      if('serviceWorker' in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update()));
+      }
+    }catch(e){ console.warn('cache clear failed', e); }
+    // キャッシュを使わず再読み込み
+    showToast('最新版を読み込みます');
+    setTimeout(()=>{ location.reload(); }, 600);
+  }
+
   /* ============================================================ GAS送信・受信（分離） ============================================================ */
   /* 共通: GASへPOSTしてJSONを返す（失敗時はnull＋トースト） */
   async function gasRequest(action, includeData){
@@ -2538,7 +2577,7 @@ const App = (() => {
     addPerson, removePerson,
     addCategory, removeCategory, resetCategories,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
-    connectGas, disconnectGas,
+    connectGas, disconnectGas, updateApp,
     openCatFilter, applyCatFilter, catFilterSelectAll,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
   };
