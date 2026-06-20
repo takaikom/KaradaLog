@@ -1,0 +1,2534 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<!--
+  ============================================================
+  karada-log-v2.html （旧 health-tracker-v1.html）
+  アプリ名: からだログ / Karada Log
+  「生涯の成長・健康記録」をコンセプトに刷新
+
+  【変更履歴】
+  v2.11: PWA / APK対応
+    - manifest.json・service-worker.js・各種アイコンを追加しPWA化
+    - apple-touch-icon等のメタタグ、Service Worker登録を追加
+    - オフライン動作対応（GAS通信はキャッシュせず常に最新）
+    - APK化(Bubblewrap/TWA)用の設定とガイドを同梱
+  v2.10: カードUI調整・日本語入力対応
+    - 削除・編集・ロックボタンを横並び（左から削除→編集→ロック）に変更
+      カードの縦幅を増やさない
+    - 成長カードの数値とラベルの上下を入れ替え（ラベル上・数値下）
+    - 健康カードを3行構成に: 1行目=日付等／2行目=登録テキスト／3行目=カテゴリ等
+    - 日本語入力欄に lang="ja" inputmode="text" を付与し日本語入力モードを促す
+  v2.9: 同期方式変更・ロック個別化・全員表示・UI調整
+    - 送受信を完全上書き方式に変更。削除データはローカルのみ保持し送受信しない
+      （送信時にdeleted項目を除外、受信時はリモートで上書きしつつローカル削除分を保持）
+    - グラフ凡例: 👁/🚫アイコンを廃止し、ボタンの濃淡のみでオンオフ表現
+    - ロック機能をヘッダーから廃止し、記録ごとの🔒トグルに変更
+      （ロック中は編集・削除不可。項目単位で保護）
+    - 編集ボタンのアイコンを✏️に変更
+    - 成長画面に「全員」表示を追加（人物ごとに色分けしたグラフ＋全員分の一覧）
+      新規追加/編集時は対象人物を選択するプルダウンを表示
+    - iPhone表示揺れ・はみ出し対策（前版で適用済みを継続）
+  v2.8: 表示不具合の根治・GAS送受信の分離
+    - グラフの時間軸を外部date-fnsアダプタ依存から脱却（linear軸＋自前整形）。
+      アダプタCDN読込失敗でグラフが落ち、一覧・保存後更新まで巻き込む問題を解消
+    - renderChartをtry-catchで隔離し、グラフ失敗でも一覧は必ず表示
+    - GAS同期を「⬆送信(push)」「⬇受信(pull)」に分離（ヘッダーに2ボタン）
+      接続時は受信のみ実行しローカルの意図しない上書きを防止
+    - GAS側にpush/pull/sync(互換)アクションを追加
+  v2.7.1: 重大バグ修正（記録が表示されない/保存後モーダルが閉じない）
+    - loadData内の関数名誤り(DEFAULT_getCategories)を修正。これが原因で
+      データ読込が例外で停止し、一覧・グラフ非表示・保存後の画面更新停止が発生していた
+    - normalizeData()を追加。GAS/インポート由来でdateが数値やDate型でも
+      "YYYY-MM-DD"文字列へ正規化し、数値・boolean型も復元
+    - 各種ソート/最新日時取得をnull安全化、グラフは妥当な日付のみ描画
+  v2.7: 同期見直し・グラフ時間軸化・日付表示・編集ボタン改善
+    - GAS同期をID単位マージ(mergeById)に変更し人物等の消失を防止
+      （personにcreatedAt付与、GAS側はテキスト書式固定で日付自動変換を回避）
+    - 成長グラフを時間軸(time scale)化。目盛りは期間に応じ3/6/12ヶ月等に自動調整
+      ラベルは「yyyy年m月」、ホバーで正確な測定日「yyyy年m月d日」を表示
+    - 記録一覧の日付を「yyyy年m月d日（aaa）」表示に変更（formatDateJP）
+    - 編集ボタン(✎)を常時表示にして視認性を向上
+  v2.6: 健康カテゴリの追加/削除を設定画面に追加
+    - 設定タブに「カテゴリ管理」セクションを新設（絵文字＋名前＋色で追加）
+    - デフォルトに「言い間違い」カテゴリを追加
+    - カテゴリ削除時、使用中の記録は「その他」へ自動付け替え
+    - 「初期に戻す」ボタンでデフォルトカテゴリへリセット
+    - data.categories として保存・GAS同期（categoriesシート）対応
+  v2.5: 登録済みデータの編集機能を追加
+    - 成長記録・健康記録の各アイテムをタップで編集モーダルを開く
+    - PCはホバーで✎編集ボタン表示、モバイルは✎を常時表示
+    - 編集モードでは既存値をフォームに復元し、保存で上書き更新
+    - モーダルタイトルが「追加」⇔「編集」で切り替わる
+    - 閉じると編集状態はリセット（新規モードに戻る）
+  v2.4: 接続失敗の原因切り分け強化
+    - POSTがJSONを返さない場合はGETでフォールバック疎通確認
+    - res.json()ではなくtext()で受けてからJSONパース（HTML応答対策）
+    - 失敗時に具体的な原因（JSONでない/ネットワーク等）を画面表示
+    - URL検証を /exec 形式チェックに強化
+  v2.3: GAS接続失敗（CORS）を修正
+    - fetchのContent-Typeを application/json → text/plain に変更
+    - これによりブラウザのCORSプリフライト(OPTIONS)が発生せず、
+      GASがdoOptionsを返せない問題を回避（接続失敗の根本原因）
+    - mode:'cors' を外し redirect:'follow' を指定（GASの302リダイレクト対応）
+  v2.2: GAS連携に接続/解除ボタンを追加
+    - URL入力後「🔗接続」ボタンで疎通確認→接続状態を表示
+    - 「🔌解除」ボタンで連携解除（ローカルデータは保持）
+    - 接続状態（●接続済み/○未接続）を明示
+    - 未接続時はヘッダー同期ボタンを薄く表示し、押下で設定タブへ誘導
+  v2.1: 日付入力をまとめて単一欄化
+    - 年/月/日の独立セレクトを廃止
+    - テンキー入力で YYYY/MM/DD（区切りスラッシュ自動挿入）の単一テキスト欄に変更
+    - 📅カレンダーボタンでネイティブ日付ピッカーからも選択可能
+    - getDateISO/setDate/onDateTextInput 等で日付を扱う
+  v2: 大幅刷新
+    - アプリ名を「からだログ」に変更（子ども限定でなく生涯の記録）
+    - グラフ凡例: 取り消し線方式をやめ、ON/OFFチップ式トグルに変更
+    - 人物(ユーザー)切替ボタンの不具合修正（イベント再バインド方式へ）
+    - インポート時に対象人物を選択して紐付け
+    - 日付入力を「年/月/日」独立セレクトに変更（4桁制限・移動誤操作を解消）
+    - ワクチン記録を「健康管理」タブに統合（カテゴリの一種として扱う）
+    - 健康管理にカテゴリ＋期間フィルター（Excel風オートフィルタUI）
+    - 月齢/年齢を誕生日から自動算出（手入力廃止）
+    - 生年月日入力欄のラベル/プレースホルダを明確化
+    - ゴミ箱タブ廃止 → 設定タブ内に「ゴミ箱」セクションとして統合
+    - タブ構成: 成長 / 健康管理 / 設定 の3つ
+
+  v1: 初版（health-tracker-v1.html）
+
+  【引き継ぎ注意（改修時も維持すること）】
+  - 各コード・ブロックに意味のコメントを必ず残す
+  - 全データは localStorage キー "karadaLogData" に保存
+  - GASシート構成: persons / growth / healthRecords
+    （v1のvaccines/healthNotesはhealthRecordsに統合）
+  - 年齢算出は calcAge(birthDate, targetDate) を使う
+  - 削除は2段階: deleted:true(一時) → purge(完全)
+  - finance-tracker-v67.html 同等の汎用ルールを適用済み
+  ============================================================
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#5b7cfa">
+<meta name="apple-mobile-web-app-title" content="からだログ">
+<!-- PWA: マニフェスト -->
+<link rel="manifest" href="manifest.json">
+<!-- アイコン類 -->
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="120x120" href="icons/icon-120.png">
+<title>からだログ</title>
+<style>
+/* ============================================================
+   CSS変数 - ダーク/ライト両対応のデザイントークン
+   ============================================================ */
+:root{
+  --bg:#f4f6fb; --surface:#ffffff; --surface2:#eef1f8; --surface3:#e4e9f4;
+  --border:#e0e4ef; --border2:#c8cedd;
+  --text:#1a1d2e; --text2:#4a5068; --text3:#8890a8;
+  --accent:#5b7cfa; --accent-soft:#e9effe; --accent-dark:#4263e0;
+  --green:#22b765; --green-soft:#e4f8ee;
+  --red:#e24b4a; --red-soft:#feecec;
+  --orange:#f0980b; --orange-soft:#fff6e6;
+  --purple:#9c5cf5; --purple-soft:#f3effe;
+  --teal:#10b3c6; --teal-soft:#e4f7f9;
+  --pink:#ec4899; --pink-soft:#fdecf5;
+  --shadow:0 2px 12px rgba(30,40,90,0.07);
+  --shadow2:0 8px 28px rgba(30,40,90,0.16);
+  --radius:16px; --radius-sm:10px;
+  --header-h:58px; --tab-h:54px;
+}
+.dark{
+  --bg:#0f1119; --surface:#1a1d2b; --surface2:#232739; --surface3:#2c3147;
+  --border:#2a2f44; --border2:#3a4060;
+  --text:#eef0f8; --text2:#9aa0be; --text3:#5c6180;
+  --accent:#7290ff; --accent-soft:#1b2541; --accent-dark:#5b7cfa;
+  --green:#34d17a; --green-soft:#0e2b1e;
+  --red:#f06464; --red-soft:#2c1313;
+  --orange:#fbbf24; --orange-soft:#2c1e06;
+  --purple:#b17afa; --purple-soft:#1f1340;
+  --teal:#2dd4e6; --teal-soft:#0c2b30;
+  --pink:#f472b6; --pink-soft:#2e1322;
+  --shadow:0 2px 12px rgba(0,0,0,0.35);
+  --shadow2:0 8px 28px rgba(0,0,0,0.5);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{
+  height:100%;
+  width:100%;
+  max-width:100%;
+  overflow:hidden;            /* 縦横ともページ自体はスクロールさせない（内側.mainのみスクロール） */
+  overflow-x:hidden;          /* 横スクロール完全禁止（左右揺れ防止） */
+  overscroll-behavior:none;   /* スクロール連鎖・バウンスによる揺れ防止 */
+  position:fixed;             /* iOSのアドレスバー伸縮に伴うレイアウト揺れを防止 */
+  top:0;left:0;right:0;bottom:0;
+  -webkit-text-size-adjust:100%;  /* 端末回転等での自動文字サイズ変更を無効化（はみ出し防止） */
+  text-size-adjust:100%;
+  touch-action:manipulation;  /* ダブルタップズーム無効（2本指ピンチは有効のまま） */
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic UI',sans-serif;
+  background:var(--bg); color:var(--text); font-size:15px; line-height:1.5;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .25s,color .25s;
+}
+button{cursor:pointer;border:none;background:none;font-family:inherit;font-size:inherit;color:inherit;touch-action:manipulation;}
+input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);}
+/* iOSで入力時に自動ズームしないよう、フォーム要素は最低16px（はみ出し・拡大防止） */
+input,select,textarea{font-size:16px;}
+
+/* ============================================================
+   ヘッダー
+   ============================================================ */
+.header{
+  position:fixed;top:0;left:0;right:0;z-index:100;height:var(--header-h);
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 12px;gap:6px;box-shadow:var(--shadow);
+  max-width:100%;
+}
+.header-logo{
+  display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;
+}
+.header-logo .logo-mark{
+  width:34px;height:34px;border-radius:10px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+  box-shadow:0 3px 10px rgba(91,124,250,.35);
+}
+.header-logo .logo-text{font-size:18px;font-weight:800;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.header-logo .logo-text small{font-size:10px;font-weight:600;color:var(--text3);display:block;letter-spacing:.08em;margin-top:-3px;}
+.icon-btn{
+  width:38px;height:38px;border-radius:50%;
+  background:var(--surface2);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  transition:background .2s;flex-shrink:0;
+}
+/* 狭い画面ではアイコンとロゴをさらに圧縮してはみ出しを防ぐ */
+@media (max-width:380px){
+  .header{padding:0 8px;gap:4px;}
+  .icon-btn{width:34px;height:34px;font-size:15px;}
+  .header-logo .logo-mark{width:30px;height:30px;font-size:16px;}
+  .header-logo .logo-text{font-size:16px;}
+}
+.icon-btn:hover{background:var(--border);}
+.icon-btn.btn-lock.locked{background:var(--orange-soft);border-color:var(--orange);color:var(--orange);}
+.icon-btn.btn-sync{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.icon-btn.btn-sync:hover{background:var(--accent);color:#fff;}
+.icon-btn.btn-sync.syncing{animation:spin 1s linear infinite;}
+/* 送信・受信ボタン */
+.icon-btn.btn-push{background:var(--green-soft);border-color:var(--green);color:var(--green);}
+.icon-btn.btn-push:hover{background:var(--green);color:#fff;}
+.icon-btn.btn-pull{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.icon-btn.btn-pull:hover{background:var(--accent);color:#fff;}
+.icon-btn.busy{animation:pulse 0.8s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ============================================================
+   タブナビ
+   ============================================================ */
+.tabs{
+  position:fixed;top:var(--header-h);left:0;right:0;z-index:90;height:var(--tab-h);
+  background:var(--surface);border-bottom:1px solid var(--border);display:flex;
+}
+.tab-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:6px 4px;font-size:11px;font-weight:700;color:var(--text3);
+  border-bottom:3px solid transparent;transition:color .15s,border-color .15s;
+}
+.tab-btn .tab-icon{font-size:19px;}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ============================================================
+   メイン
+   ============================================================ */
+.main{
+  position:fixed;top:calc(var(--header-h) + var(--tab-h));bottom:0;left:0;right:0;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;   /* 上下端でのバウンス連鎖を抑制 */
+  width:100%;max-width:100%;
+}
+.page{display:none;min-height:100%;padding:16px 16px 90px;max-width:100%;overflow-x:hidden;}
+.page.active{display:block;}
+@media (min-width:760px){ .page{max-width:720px;margin:0 auto;} }
+/* 全ての行コンテナで子要素のはみ出しを防ぐ（横揺れ・はみ出し対策） */
+.form-row,.summary-bar,.person-tabs,.chart-legend,.record-vals,.filter-bar{max-width:100%;}
+.record-item,.health-item,.card,.settings-card{max-width:100%;overflow:hidden;}
+/* 長い文字列での横はみ出し防止 */
+.health-body,.note-body,.setting-label,.health-name{overflow-wrap:anywhere;word-break:break-word;}
+
+/* ============================================================
+   カード／タイトル
+   ============================================================ */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+.section-title{
+  font-size:12px;font-weight:800;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.08em;margin:4px 2px 10px;display:flex;align-items:center;gap:6px;
+}
+
+/* ============================================================
+   人物タブ（成長・健康共通）
+   ============================================================ */
+.person-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.person-tab{
+  padding:7px 16px;border-radius:22px;font-size:13px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+  transition:all .15s;
+}
+.person-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 3px 10px rgba(91,124,250,.3);}
+.person-tab .pt-age{font-size:10px;opacity:.75;font-weight:600;}
+
+/* ============================================================
+   サマリーチップ
+   ============================================================ */
+.summary-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.summary-chip{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:10px 14px;flex:1;min-width:74px;text-align:center;box-shadow:var(--shadow);
+}
+.summary-chip .sc-label{font-size:10px;color:var(--text3);font-weight:700;}
+.summary-chip .sc-val{font-size:19px;font-weight:800;color:var(--text);}
+.summary-chip .sc-unit{font-size:10px;color:var(--text3);font-weight:600;}
+.summary-chip .sc-sub{font-size:10px;color:var(--text3);margin-top:1px;}
+
+/* ============================================================
+   グラフ凡例トグル（取り消し線をやめてON/OFFチップ式に）
+   ============================================================ */
+.chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.legend-chip{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;
+  border:1.5px solid var(--border);background:var(--surface2);color:var(--text3);
+  transition:all .15s;
+}
+.legend-chip .lc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;transition:background .15s;}
+/* ON: 濃い（色付き背景・濃い文字・実線枠）。OFF: 薄い（淡色・グレー文字） */
+.legend-chip.on{background:var(--accent-soft);color:var(--text);border-color:var(--accent);opacity:1;}
+.legend-chip.off{background:var(--surface2);color:var(--text3);border-color:var(--border);opacity:.5;}
+.legend-chip.off .lc-dot{background:var(--text3)!important;}
+
+.chart-wrap{position:relative;width:100%;height:220px;margin-top:4px;}
+.chart-wrap canvas{width:100%!important;height:100%!important;}
+
+/* ============================================================
+   記録リスト（スワイプ削除）
+   ============================================================ */
+.record-list{display:flex;flex-direction:column;gap:8px;}
+.habit-swipe-wrap{position:relative;border-radius:var(--radius);overflow:hidden;}
+.habit-swipe-del{
+  position:absolute;right:0;top:0;bottom:0;width:80px;background:var(--red);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#fff;font-size:12px;font-weight:700;border-radius:0 var(--radius) var(--radius) 0;
+  pointer-events:none;opacity:0;transition:opacity .15s;cursor:pointer;line-height:1.3;
+}
+.habit-swipe-del.visible{opacity:1;pointer-events:auto;}
+.habit-swipe-wrap:hover .habit-hover-del{opacity:1;pointer-events:auto;}
+.habit-hover-del{
+  width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text3);font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:opacity .15s,background .12s,color .12s,border-color .12s;
+  pointer-events:none;flex-shrink:0;
+}
+.habit-hover-del:hover{background:var(--red-soft);color:var(--red);border-color:var(--red);}
+@media (hover:none){.habit-hover-del{display:none!important;}}
+/* 編集ボタン（常時うっすら表示、ホバー/タッチで明確に） */
+.habit-swipe-wrap:hover .habit-hover-edit{opacity:1;pointer-events:auto;}
+.habit-hover-edit{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--accent);
+  background:var(--accent-soft);color:var(--accent);font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;opacity:.85;
+  transition:opacity .15s,background .12s,transform .1s;
+  pointer-events:auto;flex-shrink:0;
+}
+.habit-hover-edit:hover{background:var(--accent);color:#fff;}
+.habit-hover-edit:active{transform:scale(.9);}
+/* タッチ端末でも常時表示 */
+@media (hover:none){.habit-hover-edit{opacity:1;pointer-events:auto;}}
+/* 項目ごとのロックボタン */
+.item-lock{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface2);font-size:13px;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,transform .1s;
+}
+.item-lock:active{transform:scale(.9);}
+.item-lock.on{background:var(--orange-soft);border-color:var(--orange);}
+/* ボタン横並び（左から: 削除・編集・ロック）。カードの縦幅を広げない */
+.item-btn-row{display:flex;flex-direction:row;gap:6px;flex-shrink:0;align-items:center;}
+/* ロック中アイテムの見た目（編集不可を示す） */
+.record-item.locked,.health-item.locked{background:var(--orange-soft);}
+.record-item.locked .habit-hover-edit,.health-item.locked .habit-hover-edit,
+.record-item.locked .habit-hover-del,.health-item.locked .habit-hover-del{opacity:.3;}
+
+.record-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;display:flex;align-items:center;gap:10px;
+}
+.record-item.deleted{opacity:.45;background:var(--surface2);}
+.record-date{font-size:12px;color:var(--text3);font-weight:700;min-width:96px;}
+.record-vals{flex:1;display:flex;flex-wrap:wrap;gap:8px 12px;}
+.record-val{display:flex;flex-direction:column-reverse;font-size:11px;color:var(--text3);font-weight:600;}
+.record-val span{font-size:15px;font-weight:800;color:var(--text);}
+.record-age{font-size:10px;color:var(--accent);background:var(--accent-soft);border-radius:10px;padding:2px 8px;align-self:flex-start;font-weight:700;}
+
+/* ============================================================
+   健康管理アイテム
+   ============================================================ */
+.health-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;display:flex;align-items:flex-start;gap:11px;
+}
+.health-icon{
+  width:34px;height:34px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:17px;flex-shrink:0;
+}
+.health-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.health-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.health-name-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.health-tag-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:1px;}
+.health-name{font-weight:700;font-size:14px;}
+.health-cat{font-size:10px;border-radius:7px;padding:2px 7px;font-weight:700;}
+.health-meta{font-size:12px;color:var(--text3);}
+.health-body{font-size:13px;color:var(--text2);white-space:pre-wrap;word-break:break-word;}
+.health-status-badge{font-size:10px;border-radius:6px;padding:2px 7px;font-weight:700;}
+
+/* ============================================================
+   Excel風フィルターバー
+   ============================================================ */
+.filter-bar{
+  display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 12px;box-shadow:var(--shadow);
+}
+.filter-btn{
+  display:flex;align-items:center;gap:5px;
+  padding:6px 12px;border-radius:9px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+  transition:all .15s;
+}
+.filter-btn:hover{background:var(--border);}
+.filter-btn.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.filter-btn .fb-caret{font-size:9px;}
+.filter-count{font-size:11px;color:var(--text3);margin-left:auto;font-weight:600;}
+.filter-reset{font-size:11px;color:var(--accent);font-weight:700;}
+
+/* フィルターポップオーバー（Excelのオートフィルタ風） */
+.filter-pop{
+  position:fixed;z-index:600;
+  background:var(--surface);border:1px solid var(--border2);border-radius:14px;
+  box-shadow:var(--shadow2);padding:12px;min-width:220px;max-width:280px;
+  max-height:60vh;overflow-y:auto;display:none;
+}
+.filter-pop.open{display:block;}
+.filter-pop-title{font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.filter-check{
+  display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .12s;
+}
+.filter-check:hover{background:var(--surface2);}
+.filter-check input{width:17px;height:17px;accent-color:var(--accent);}
+.filter-pop-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.filter-pop-actions button{flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:700;}
+.fpa-clear{background:var(--surface2);color:var(--text2);border:1px solid var(--border);}
+.fpa-apply{background:var(--accent);color:#fff;}
+
+/* 期間フィルター入力 */
+.period-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+.period-row .form-input{flex:1;}
+.period-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.period-preset{
+  font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text2);
+}
+.period-preset.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+
+/* ============================================================
+   フォーム
+   ============================================================ */
+.form-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+.form-field{display:flex;flex-direction:column;gap:5px;min-width:80px;flex:1;}
+.form-field>label{font-size:11px;font-weight:700;color:var(--text3);}
+.form-input{
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;
+  background:var(--surface2);color:var(--text);transition:border-color .15s,background .15s;width:100%;
+}
+.form-input:focus{outline:none;border-color:var(--accent);background:var(--surface);}
+.form-input-wrap{position:relative;display:flex;align-items:center;}
+.form-input-wrap .form-input{padding-right:32px;}
+.btn-clear-field{
+  position:absolute;right:9px;width:19px;height:19px;border-radius:50%;
+  background:var(--text3);color:#fff;font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:opacity .15s;pointer-events:none;
+}
+.form-input-wrap:focus-within .btn-clear-field,
+.form-input-wrap.has-val .btn-clear-field{opacity:1;pointer-events:auto;}
+
+/* ============================================================
+   日付入力（テンキー＋スラッシュ区切り単一欄 ＋ カレンダー選択）
+   - テキスト欄: YYYY/MM/DD をテンキーで入力（区切りは自動挿入）
+   - カレンダーボタン: ネイティブの日付ピッカーを開く
+   ============================================================ */
+.date-input-row{display:flex;gap:6px;align-items:stretch;}
+.date-input-wrap{position:relative;flex:1;display:flex;align-items:center;}
+.date-input-wrap .form-input{
+  padding-right:34px;font-variant-numeric:tabular-nums;letter-spacing:.04em;
+}
+.date-input-wrap .btn-clear-field{right:9px;}
+/* カレンダーボタン */
+.btn-calendar{
+  width:46px;flex-shrink:0;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--surface2);color:var(--text2);font-size:18px;
+  display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;
+  position:relative;
+}
+.btn-calendar:hover{background:var(--border);border-color:var(--accent);color:var(--accent);}
+/* ネイティブdateを重ねて透明化（クリックでピッカー起動） */
+.btn-calendar input[type=date]{
+  position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;
+  border:none;padding:0;
+}
+
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
+.btn-primary{
+  background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:10px 22px;
+  font-weight:700;font-size:14px;transition:background .15s,transform .1s;
+}
+.btn-primary:hover{background:var(--accent-dark);}
+.btn-primary:active{transform:scale(.97);}
+.btn-secondary{
+  background:var(--surface2);color:var(--text2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:10px 18px;font-weight:700;font-size:14px;
+}
+
+/* カテゴリ選択ピル */
+.cat-pills{display:flex;flex-wrap:wrap;gap:8px;}
+.cat-pill{
+  display:flex;align-items:center;gap:5px;padding:8px 14px;border-radius:11px;
+  font-size:13px;font-weight:700;background:var(--surface2);border:1.5px solid var(--border);
+  color:var(--text2);transition:all .15s;
+}
+.cat-pill.selected{transform:translateY(-1px);}
+
+/* ============================================================
+   FAB
+   ============================================================ */
+.fab{
+  position:fixed;right:20px;bottom:24px;z-index:200;width:56px;height:56px;
+  border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));
+  color:#fff;font-size:28px;font-weight:300;display:flex;align-items:center;
+  justify-content:center;box-shadow:var(--shadow2);transition:transform .1s;
+}
+.fab:active{transform:scale(.92);}
+.fab.hidden{display:none;}
+
+/* ============================================================
+   モーダル
+   ============================================================ */
+.modal-overlay{
+  position:fixed;inset:0;z-index:500;background:rgba(10,15,30,.5);
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;backdrop-filter:blur(2px);
+}
+.modal-overlay.open{opacity:1;pointer-events:auto;}
+.modal-sheet{
+  background:var(--surface);border-radius:22px 22px 0 0;width:100%;max-width:600px;
+  max-height:92dvh;overflow-y:auto;padding:20px 20px 40px;
+  transform:translateY(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+}
+.modal-overlay.open .modal-sheet{transform:translateY(0);}
+.modal-title{font-size:18px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px;}
+.modal-close{
+  margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--surface2);
+  display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text2);
+}
+
+/* 設定行 */
+.setting-row{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border);}
+.setting-row:last-child{border-bottom:none;}
+.setting-label{flex:1;font-size:14px;font-weight:700;}
+.setting-desc{font-size:12px;color:var(--text3);margin-top:2px;font-weight:500;}
+
+/* 設定ページ内のサブカード */
+.settings-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+
+/* ゴミ箱バー */
+.trash-bar{
+  display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--red-soft);
+  border:1px solid var(--red);border-radius:var(--radius);margin-bottom:12px;
+  font-size:13px;color:var(--red);font-weight:700;
+}
+.trash-bar .spacer{flex:1;}
+.btn-mini{font-size:12px;font-weight:700;border-radius:7px;padding:5px 11px;}
+.btn-mini.restore{color:var(--accent);background:var(--accent-soft);}
+.btn-mini.purge{color:var(--red);background:var(--surface);border:1px solid var(--red);}
+
+/* トースト */
+.toast{
+  position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:999;
+  background:var(--text);color:var(--surface);border-radius:22px;padding:11px 22px;
+  font-size:14px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;
+  box-shadow:var(--shadow2);max-width:90vw;
+}
+.toast.show{opacity:1;}
+
+/* 空状態 */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3);}
+.empty-state .es-icon{font-size:44px;margin-bottom:10px;}
+.empty-state .es-text{font-size:14px;font-weight:600;}
+
+/* 固定閉じるボタン */
+.fixed-close{
+  position:sticky;bottom:-40px;left:0;right:0;padding:12px 0 0;z-index:10;margin-top:8px;
+  background:linear-gradient(to bottom,transparent,var(--surface) 45%);
+  display:flex;justify-content:center;
+}
+.fixed-close button{
+  background:var(--surface2);border:1px solid var(--border);border-radius:22px;
+  padding:9px 28px;font-size:14px;font-weight:700;color:var(--text2);
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ ヘッダー ============================================================ -->
+<header class="header">
+  <div class="header-logo">
+    <div class="logo-mark">🌿</div>
+    <div class="logo-text">からだログ<small>KARADA LOG</small></div>
+  </div>
+  <button class="icon-btn btn-push" id="btnPush" title="送信（アップロード）" onclick="App.pushToGas()">⬆</button>
+  <button class="icon-btn btn-pull" id="btnPull" title="受信（ダウンロード）" onclick="App.pullFromGas()">⬇</button>
+  <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
+</header>
+
+<!-- ============================================================ タブ（3つ） ============================================================ -->
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="growth" onclick="App.switchTab('growth')">
+    <span class="tab-icon">📏</span>成長
+  </button>
+  <button class="tab-btn" data-tab="health" onclick="App.switchTab('health')">
+    <span class="tab-icon">🩺</span>健康管理
+  </button>
+  <button class="tab-btn" data-tab="settings" onclick="App.switchTab('settings')">
+    <span class="tab-icon">⚙️</span>設定
+  </button>
+</nav>
+
+<!-- ============================================================ メイン ============================================================ -->
+<main class="main" id="main">
+
+  <!-- === 成長タブ === -->
+  <div class="page active" id="page-growth">
+    <div class="person-tabs" id="growthPersonTabs"></div>
+    <div class="summary-bar" id="growthSummary"></div>
+    <div class="card" id="chartCard">
+      <div class="section-title" style="margin:0 0 10px">📈 成長グラフ</div>
+      <!-- 凡例トグル（ON/OFFチップ式） -->
+      <div class="chart-legend" id="chartLegend"></div>
+      <div class="chart-wrap"><canvas id="chartCanvas"></canvas></div>
+    </div>
+    <div class="section-title" style="margin-top:10px">📋 記録一覧</div>
+    <div class="record-list" id="growthList"></div>
+    <div class="empty-state" id="growthEmpty" style="display:none">
+      <div class="es-icon">📏</div><div class="es-text">記録がありません<br>＋ボタンから追加できます</div>
+    </div>
+  </div>
+
+  <!-- === 健康管理タブ（ワクチン統合） === -->
+  <div class="page" id="page-health">
+    <div class="person-tabs" id="healthPersonTabs"></div>
+    <!-- Excel風フィルターバー -->
+    <div class="filter-bar">
+      <button class="filter-btn" id="catFilterBtn" onclick="App.openCatFilter(event)">
+        🏷 カテゴリ<span class="fb-caret">▼</span>
+      </button>
+      <button class="filter-btn" id="periodFilterBtn" onclick="App.openPeriodFilter(event)">
+        📅 期間<span class="fb-caret">▼</span>
+      </button>
+      <button class="filter-reset" onclick="App.resetHealthFilters()">クリア</button>
+      <span class="filter-count" id="healthCount"></span>
+    </div>
+    <div class="record-list" id="healthList"></div>
+    <div class="empty-state" id="healthEmpty" style="display:none">
+      <div class="es-icon">🩺</div><div class="es-text">記録がありません</div>
+    </div>
+  </div>
+
+  <!-- === 設定タブ（ゴミ箱統合） === -->
+  <div class="page" id="page-settings">
+
+    <!-- 人物管理 -->
+    <div class="section-title">👥 人物管理</div>
+    <div class="settings-card">
+      <div id="personList"></div>
+      <div class="form-row" style="margin:12px 0 0">
+        <div class="form-field" style="flex:1.3">
+          <label>名前</label>
+          <div class="form-input-wrap" id="wrap_pname">
+            <input type="text" class="form-input" id="newPersonName" inputmode="text" lang="ja" autocapitalize="off" placeholder="名前を入力"
+              oninput="App.fieldUpdate('pname')">
+            <button class="btn-clear-field" onclick="App.clearField('newPersonName','pname')">✕</button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:1.6">
+          <label>生年月日</label>
+          <div class="date-input-row" id="newPersonBirthRow">
+            <div class="date-input-wrap" id="wrap_pb">
+              <input type="text" class="form-input" id="pb_text" inputmode="numeric" maxlength="10"
+                placeholder="生年月日を入力 (例 1990/01/15)"
+                oninput="App.onDateTextInput('pb')" onkeydown="App.dateTextKeyDown(event,'pb')">
+              <button class="btn-clear-field" onclick="App.clearDateField('pb')">✕</button>
+            </div>
+            <label class="btn-calendar" title="カレンダーから選択">📅
+              <input type="date" id="pb_picker" onchange="App.onDatePickerChange('pb')">
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="App.addPerson()">＋ 人物を追加</button>
+      </div>
+    </div>
+
+    <!-- カテゴリ管理（健康管理タブで使うカテゴリの追加/削除） -->
+    <div class="section-title">🏷 カテゴリ管理</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">健康管理で使うカテゴリを追加・削除できます。</div>
+      <div id="categoryList"></div>
+      <div class="form-row" style="margin:12px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:0 0 56px">
+          <label>絵文字</label>
+          <input type="text" class="form-input" id="newCatIcon" maxlength="2" placeholder="🏷"
+            style="text-align:center;font-size:18px;padding:8px 4px">
+        </div>
+        <div class="form-field" style="flex:1.3">
+          <label>カテゴリ名</label>
+          <div class="form-input-wrap" id="wrap_catname">
+            <input type="text" class="form-input" id="newCatName" inputmode="text" lang="ja" autocapitalize="off" placeholder="カテゴリ名を入力"
+              oninput="App.fieldUpdate('catname')">
+            <button class="btn-clear-field" onclick="App.clearField('newCatName','catname')">✕</button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:0 0 80px">
+          <label>色</label>
+          <select class="form-input" id="newCatColor" style="padding:8px 6px"></select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="App.resetCategories()" style="margin-right:auto">初期に戻す</button>
+        <button class="btn-primary" onclick="App.addCategory()">＋ カテゴリを追加</button>
+      </div>
+    </div>
+
+    <!-- GAS連携 -->
+    <div class="section-title">🔗 GAS連携</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:8px">Google Apps Script のデプロイ済みURLを登録すると同期できます。</div>
+      <div class="form-input-wrap" id="wrap_gas">
+        <input type="url" class="form-input" id="gasUrl" placeholder="https://script.google.com/macros/s/..."
+          oninput="App.fieldUpdate('gas')">
+        <button class="btn-clear-field" onclick="App.clearField('gasUrl','gas')">✕</button>
+      </div>
+      <!-- 接続状態表示 -->
+      <div id="gasStatus" style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;margin:10px 0 4px"></div>
+      <!-- 接続/解除ボタン -->
+      <div class="form-actions" style="justify-content:flex-start">
+        <button class="btn-primary" id="gasConnectBtn" onclick="App.connectGas()">🔗 接続</button>
+        <button class="btn-secondary" id="gasDisconnectBtn" onclick="App.disconnectGas()" style="display:none;color:var(--red);border-color:var(--red)">🔌 解除</button>
+      </div>
+    </div>
+
+    <!-- データ管理 -->
+    <div class="section-title">💾 データ</div>
+    <div class="settings-card">
+      <div class="setting-row">
+        <div><div class="setting-label">JSONインポート</div><div class="setting-desc">対象の人物を選んで取り込みます</div></div>
+        <input type="file" accept=".json" id="importFile" style="display:none" onchange="App.importJSON(event)">
+        <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 読込</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">JSONエクスポート</div>
+        <button class="btn-secondary" onclick="App.exportJSON()">💾 保存</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label" style="color:var(--red)">全データ削除</div>
+        <button class="btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="App.clearAllData()">🗑 削除</button>
+      </div>
+    </div>
+
+    <!-- ゴミ箱（旧タブを統合） -->
+    <div class="section-title">🗑 ゴミ箱</div>
+    <div class="trash-bar" id="trashBar" style="display:none">
+      <span>一時削除中</span><span class="spacer"></span>
+      <button class="btn-mini restore" onclick="App.restoreAll()">全て復元</button>
+      <button class="btn-mini purge" onclick="App.purgeAll()">全て完全削除</button>
+    </div>
+    <div class="record-list" id="trashList"></div>
+    <div class="empty-state" id="trashEmpty" style="padding:24px"><div class="es-icon" style="font-size:32px">✨</div><div class="es-text">ゴミ箱は空です</div></div>
+
+  </div>
+
+</main>
+
+<!-- FAB -->
+<button class="fab" id="fab" onclick="App.openAddModal()">＋</button>
+
+<!-- ============================================================ 成長記録モーダル ============================================================ -->
+<div class="modal-overlay" id="modalGrowth">
+  <div class="modal-sheet">
+    <div class="modal-title"><span id="modalGrowthTitle">📏 成長記録を追加</span><button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
+    <!-- 対象人物（全員表示中の新規追加時などに使用） -->
+    <div class="form-row" id="growthPersonRow" style="display:none">
+      <div class="form-field" style="flex:1">
+        <label>対象の人物</label>
+        <select class="form-input" id="g_person"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>日付</label>
+        <div class="date-input-row" id="growthDateRow">
+          <div class="date-input-wrap" id="wrap_gd">
+            <input type="text" class="form-input" id="gd_text" inputmode="numeric" maxlength="10"
+              placeholder="YYYY/MM/DD"
+              oninput="App.onDateTextInput('gd')" onkeydown="App.dateTextKeyDown(event,'gd')">
+            <button class="btn-clear-field" onclick="App.clearDateField('gd')">✕</button>
+          </div>
+          <label class="btn-calendar" title="カレンダーから選択">📅
+            <input type="date" id="gd_picker" onchange="App.onDatePickerChange('gd')">
+          </label>
+        </div>
+      </div>
+    </div>
+    <!-- 月齢/年齢は誕生日から自動算出して表示（手入力なし） -->
+    <div style="font-size:12px;color:var(--accent);font-weight:700;margin:-4px 2px 12px" id="growthAgePreview"></div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>身長 (cm)</label>
+        <div class="form-input-wrap" id="wrap_gheight">
+          <input type="number" inputmode="decimal" class="form-input" id="g_height" step="0.1" min="0" max="250" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('gheight')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_height','gheight')">✕</button>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>体重 (kg)</label>
+        <div class="form-input-wrap" id="wrap_gweight">
+          <input type="number" inputmode="decimal" class="form-input" id="g_weight" step="0.01" min="0" max="300" placeholder="0.00"
+            onfocus="this.select()" oninput="App.fieldUpdate('gweight')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_weight','gweight')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>胸囲 (cm)</label>
+        <div class="form-input-wrap" id="wrap_gchest">
+          <input type="number" inputmode="decimal" class="form-input" id="g_chest" step="0.1" min="0" max="200" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('gchest')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_chest','gchest')">✕</button>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>頭囲 (cm)</label>
+        <div class="form-input-wrap" id="wrap_ghead">
+          <input type="number" inputmode="decimal" class="form-input" id="g_head" step="0.1" min="0" max="100" placeholder="0.0"
+            onfocus="this.select()" oninput="App.fieldUpdate('ghead')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_head','ghead')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>メモ</label>
+        <div class="form-input-wrap" id="wrap_gnote">
+          <input type="text" class="form-input" id="g_note" inputmode="text" lang="ja" autocapitalize="off" placeholder="任意のメモ"
+            oninput="App.fieldUpdate('gnote')" onkeydown="App.formKeyDown(event,'modalGrowth')">
+          <button class="btn-clear-field" onclick="App.clearField('g_note','gnote')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalGrowth')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveGrowth()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ 健康管理モーダル（ワクチン含む） ============================================================ -->
+<div class="modal-overlay" id="modalHealth">
+  <div class="modal-sheet">
+    <div class="modal-title"><span id="modalHealthTitle">🩺 健康記録を追加</span><button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
+    <!-- カテゴリ選択 -->
+    <div class="form-field" style="margin-bottom:14px">
+      <label>カテゴリ</label>
+      <div class="cat-pills" id="healthCatPills"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label id="healthNameLabel">項目名</label>
+        <div class="form-input-wrap" id="wrap_hname">
+          <input type="text" class="form-input" id="h_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: インフルエンザ予防接種"
+            oninput="App.fieldUpdate('hname')" onkeydown="App.formKeyDown(event,'modalHealth')">
+          <button class="btn-clear-field" onclick="App.clearField('h_name','hname')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>日付</label>
+        <div class="date-input-row" id="healthDateRow">
+          <div class="date-input-wrap" id="wrap_hd">
+            <input type="text" class="form-input" id="hd_text" inputmode="numeric" maxlength="10"
+              placeholder="YYYY/MM/DD"
+              oninput="App.onDateTextInput('hd')" onkeydown="App.dateTextKeyDown(event,'hd')">
+            <button class="btn-clear-field" onclick="App.clearDateField('hd')">✕</button>
+          </div>
+          <label class="btn-calendar" title="カレンダーから選択">📅
+            <input type="date" id="hd_picker" onchange="App.onDatePickerChange('hd')">
+          </label>
+        </div>
+      </div>
+    </div>
+    <!-- ワクテン用のステータス・回数（カテゴリ=ワクチンの時のみ表示） -->
+    <div class="form-row" id="vaccineFields" style="display:none">
+      <div class="form-field">
+        <label>状態</label>
+        <select class="form-input" id="h_status">
+          <option value="done">接種済み ✅</option>
+          <option value="scheduled">予定 📅</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>回数目</label>
+        <div class="form-input-wrap" id="wrap_hdose">
+          <input type="number" inputmode="numeric" class="form-input" id="h_dose" min="1" max="20" placeholder="1"
+            onfocus="this.select()" oninput="App.fieldUpdate('hdose')" onkeydown="App.formKeyDown(event,'modalHealth')">
+          <button class="btn-clear-field" onclick="App.clearField('h_dose','hdose')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>内容・備考</label>
+        <div class="form-input-wrap" id="wrap_hbody">
+          <textarea class="form-input" id="h_body" inputmode="text" lang="ja" autocapitalize="off" rows="3" style="resize:vertical" placeholder="症状・経過・医院名など..."
+            oninput="App.fieldUpdate('hbody')" onkeydown="App.healthBodyKeyDown(event)"></textarea>
+          <button class="btn-clear-field" style="top:9px" onclick="App.clearField('h_body','hbody')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalHealth')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveHealth()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ インポート対象選択モーダル ============================================================ -->
+<div class="modal-overlay" id="modalImport">
+  <div class="modal-sheet">
+    <div class="modal-title">📂 インポート先を選択<button class="modal-close" onclick="App.closeModal('modalImport')">✕</button></div>
+    <div class="setting-desc" style="margin-bottom:14px" id="importDesc"></div>
+    <div id="importMapping"></div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalImport')">キャンセル</button>
+      <button class="btn-primary" onclick="App.confirmImport()">取り込む</button>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリフィルターポップオーバー -->
+<div class="filter-pop" id="catFilterPop">
+  <div class="filter-pop-title">カテゴリで絞り込み</div>
+  <div id="catFilterChecks"></div>
+  <div class="filter-pop-actions">
+    <button class="fpa-clear" onclick="App.catFilterSelectAll()">全選択</button>
+    <button class="fpa-apply" onclick="App.applyCatFilter()">適用</button>
+  </div>
+</div>
+
+<!-- 期間フィルターポップオーバー -->
+<div class="filter-pop" id="periodFilterPop">
+  <div class="filter-pop-title">期間で絞り込み</div>
+  <div class="period-presets" id="periodPresets"></div>
+  <div class="period-row">
+    <input type="month" class="form-input" id="periodFrom">
+    <span style="color:var(--text3)">〜</span>
+    <input type="month" class="form-input" id="periodTo">
+  </div>
+  <div class="filter-pop-actions">
+    <button class="fpa-clear" onclick="App.clearPeriodFilter()">クリア</button>
+    <button class="fpa-apply" onclick="App.applyPeriodFilter()">適用</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+/* ============================================================
+  からだログ メインアプリ
+  ============================================================ */
+const App = (() => {
+
+  /* ── データ構造 ──
+     persons:       [{id,name,birthDate}]
+     growth:        [{id,personId,date,height,weight,chestCirc,headCirc,bmi,note,deleted,deletedAt}]
+     healthRecords: [{id,personId,date,category,name,body,status,dose,deleted,deletedAt}]  ← ワクチン含む */
+  let data = {
+    persons: [],
+    growth: [],
+    healthRecords: [],
+    categories: [],   // 健康カテゴリ（空ならDEFAULT_CATEGORIESを使用）
+    settings: { gasUrl:'', gasConnected:false, darkMode:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
+  };
+
+  /* ── UI状態 ── */
+  let currentTab = 'growth';
+  let currentPersonId = null;       // 成長タブの選択人物
+  let healthPersonId = 'all';       // 健康タブの選択人物
+  let chart = null;
+  let scrollPositions = {};
+  // 健康フィルター状態
+  let healthCatFilter = null;       // null=全て / Set(カテゴリ名)
+  let healthPeriod = { from:null, to:null };
+  let pendingImport = null;         // インポート保留データ
+  let editingGrowthId = null;       // 編集中の成長記録ID（null=新規追加）
+  let editingHealthId = null;       // 編集中の健康記録ID（null=新規追加）
+
+  const LS_KEY = 'karadaLogData';
+
+  /* 健康カテゴリ デフォルト定義（ワクチンもここに含める）
+     ユーザーが設定画面で追加/削除できる。data.categories が無ければこれで初期化。
+     利用可能な色キー: teal/accent/red/purple/orange/green/pink/text3 */
+  const DEFAULT_CATEGORIES = [
+    { key:'ワクチン',   icon:'💉', color:'teal' },
+    { key:'通院',       icon:'🏥', color:'accent' },
+    { key:'症状',       icon:'🤒', color:'red' },
+    { key:'薬',         icon:'💊', color:'purple' },
+    { key:'検査',       icon:'🔬', color:'orange' },
+    { key:'発達',       icon:'🌱', color:'green' },
+    { key:'言い間違い', icon:'💬', color:'pink' },
+    { key:'その他',     icon:'📌', color:'text3' },
+  ];
+  /* 実際に使うカテゴリ配列（data.categoriesを参照） */
+  const getCategories = () => data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES;
+  const catMeta = k => getCategories().find(c => c.key === k) || { key:k||'その他', icon:'📌', color:'text3' };
+  /* カテゴリ選択に使える色パレット（追加時に選ぶ） */
+  const CAT_COLORS = ['teal','accent','red','purple','orange','green','pink','text3'];
+
+  /* ============================================================ 初期化 ============================================================ */
+  function init(){
+    loadData();
+    applyDarkMode();
+    buildDateSelects();           // 各日付セレクトを構築
+    buildHealthCatPills();        // モーダルのカテゴリピル
+    renderPersonTabs();
+    renderGrowthList();
+    renderHealthList();
+    renderTrash();
+    renderPersonList();
+    initCatColorSelect();         // カテゴリ色プルダウン
+    renderCategoryList();         // カテゴリ一覧
+    document.getElementById('gasUrl').value = data.settings.gasUrl || '';
+    fieldUpdate('gas');
+    renderGasStatus();            // GAS接続状態の表示
+    // ポップオーバー外クリックで閉じる
+    document.addEventListener('click', e => {
+      if(!e.target.closest('.filter-pop') && !e.target.closest('.filter-btn')){
+        closeAllPops();
+      }
+    });
+  }
+
+  /* ============================================================ 保存/読込 ============================================================ */
+  function saveData(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){ showToast('保存失敗:容量不足'); } }
+
+  /* ============================================================ GASマージ（ID単位で統合：消失を防ぐ） ============================================================
+     ローカル(local)とリモート(remote)をID単位で統合する。
+     - 両方に同IDがある → updatedAt/createdAtが新しい方を採用
+     - 片方にしかない → そのまま残す
+     これにより「同期で人物や記録が消える」事故を防ぐ。 */
+  function mergeById(local, remote, idKey){
+    local = Array.isArray(local) ? local : [];
+    remote = Array.isArray(remote) ? remote : [];
+    const map = new Map();
+    // まずローカルを入れる
+    local.forEach(item => { const k=item[idKey]; if(k!=null) map.set(String(k), item); });
+    // リモートを統合
+    remote.forEach(rItem => {
+      const k = rItem[idKey]; if(k==null) return;
+      const key = String(k);
+      const lItem = map.get(key);
+      if(!lItem){ map.set(key, rItem); return; }
+      // 両方にある → タイムスタンプ比較で新しい方
+      const lt = lItem.updatedAt || lItem.deletedAt || lItem.createdAt || '';
+      const rt = rItem.updatedAt || rItem.deletedAt || rItem.createdAt || '';
+      map.set(key, rt > lt ? rItem : lItem);
+    });
+    return [...map.values()];
+  }
+
+  /* ============================================================ 受信反映（完全上書き＋ローカル削除データ保持） ============================================================
+     方針:
+     - 受信は「削除済みを除くデータ」を完全上書きする（リモートが正）。
+     - ローカルにのみ存在する削除済み(deleted:true)アイテムは保持し、上書きされない。
+     - リモートには削除データは入っていない前提（送信時に除外しているため）。 */
+  function applyMergedData(remote){
+    if(!remote) return;
+    // ローカルの削除済みアイテムを退避
+    const keepDeleted = arr => (Array.isArray(arr)?arr:[]).filter(r=>r.deleted);
+    const delPersons = keepDeleted(data.persons);
+    const delGrowth  = keepDeleted(data.growth);
+    const delHealth  = keepDeleted(data.healthRecords);
+
+    // リモートデータで完全上書き（リモートが無い場合は空に）
+    const remoteActive = arr => (Array.isArray(arr)?arr:[]).filter(r=>!r.deleted);
+    data.persons       = remoteActive(remote.persons);
+    data.growth        = remoteActive(remote.growth);
+    data.healthRecords = remoteActive(remote.healthRecords);
+
+    // ローカルの削除済みを戻す（同一IDがリモート側にも来ていたらローカル削除を優先＝重複排除）
+    const reattach = (active, deleted, idKey) => {
+      const ids = new Set(active.map(r=>String(r[idKey])));
+      deleted.forEach(d=>{ if(!ids.has(String(d[idKey]))) active.push(d); });
+      return active;
+    };
+    data.persons       = reattach(data.persons, delPersons, 'id');
+    data.growth        = reattach(data.growth,  delGrowth,  'id');
+    data.healthRecords = reattach(data.healthRecords, delHealth, 'id');
+
+    // カテゴリはkey単位で完全上書き（リモートが空なら現状維持）
+    if(remote.categories && remote.categories.length){
+      data.categories = remote.categories.slice();
+    }
+    normalizeData();  // 型を整える（dateを文字列化、数値を数値化）
+  }
+
+  /* ============================================================ データ正規化（型の不整合で描画が落ちるのを防ぐ） ============================================================
+     GAS/インポート由来でdateが数値やDateになっていても、必ず "YYYY-MM-DD" 文字列に揃える。 */
+  function normalizeData(){
+    const toISO = v => {
+      if(v==null || v==='') return null;
+      if(typeof v==='string'){
+        // 既にYYYY-MM-DD ならそのまま。スラッシュ等は変換
+        const m=v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+        return v;
+      }
+      // Date or 数値
+      const d=new Date(v);
+      if(!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return String(v);
+    };
+    const num = v => (v==null||v===''||isNaN(v))?null:Number(v);
+
+    (data.growth||[]).forEach(r=>{
+      r.date=toISO(r.date);
+      r.height=num(r.height); r.weight=num(r.weight);
+      r.chestCirc=num(r.chestCirc); r.headCirc=num(r.headCirc); r.bmi=num(r.bmi);
+      // booleanの文字列化対策
+      if(r.deleted==='true') r.deleted=true; if(r.deleted==='false'||r.deleted===''||r.deleted==null) r.deleted=r.deleted===true;
+    });
+    (data.healthRecords||[]).forEach(r=>{
+      r.date=toISO(r.date); r.dose=num(r.dose);
+      if(r.deleted==='true') r.deleted=true; if(r.deleted==='false'||r.deleted===''||r.deleted==null) r.deleted=r.deleted===true;
+    });
+    (data.persons||[]).forEach(p=>{ if(p.birthDate) p.birthDate=toISO(p.birthDate); });
+  }
+
+  function loadData(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(raw){
+        const p = JSON.parse(raw);
+        data.persons = p.persons || [];
+        data.growth = p.growth || [];
+        data.healthRecords = p.healthRecords || [];
+        // カテゴリ：保存があればそれを、無ければデフォルトで初期化
+        data.categories = (p.categories && p.categories.length) ? p.categories : DEFAULT_CATEGORIES.map(c=>({...c}));
+        data.settings = Object.assign(data.settings, p.settings || {});
+        if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
+      } else {
+        // 初回起動：デフォルトカテゴリをセット
+        data.categories = DEFAULT_CATEGORIES.map(c=>({...c}));
+      }
+      normalizeData();  // 読み込み後に型を整える
+    }catch(e){ console.error(e); }
+  }
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  /* ============================================================ 年齢・月齢の自動算出 ============================================================
+     誕生日(birthDate)と対象日(targetDate)から「○歳○ヵ月」を計算 */
+  function calcAge(birthDate, targetDate){
+    if(!birthDate || !targetDate) return '';
+    const b = new Date(birthDate), t = new Date(targetDate);
+    if(isNaN(b) || isNaN(t) || t < b) return '';
+    let years = t.getFullYear() - b.getFullYear();
+    let months = t.getMonth() - b.getMonth();
+    let days = t.getDate() - b.getDate();
+    if(days < 0) months--;
+    if(months < 0){ years--; months += 12; }
+    if(years === 0) return months + 'ヵ月';
+    return years + '歳' + months + 'ヵ月';
+  }
+
+  /* ISO日付(YYYY-MM-DD) → 「yyyy年m月d日（aaa）」形式。aaaは日〜土の曜日。 */
+  function formatDateJP(iso){
+    if(!iso) return '';
+    const [y,m,d]=String(iso).split('-').map(Number);
+    if(!y||!m||!d) return iso;
+    const dt=new Date(y,m-1,d);
+    const wd=['日','月','火','水','木','金','土'][dt.getDay()];
+    return `${y}年${m}月${d}日（${wd}）`;
+  }
+
+  /* ============================================================ ダーク/ロック ============================================================ */
+  function toggleDark(){ data.settings.darkMode = !data.settings.darkMode; applyDarkMode(); saveData(); }
+  function applyDarkMode(){
+    document.body.classList.toggle('dark', !!data.settings.darkMode);
+    document.getElementById('btnMode').textContent = data.settings.darkMode ? '☀️' : '🌙';
+    if(chart) renderChart();
+  }
+
+  /* ============================================================ タブ切替（スクロール位置維持） ============================================================ */
+  function switchTab(tab){
+    scrollPositions[currentTab] = document.getElementById('main').scrollTop;
+    currentTab = tab;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-'+tab).classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    // FAB: 設定タブでは隠す
+    document.getElementById('fab').classList.toggle('hidden', tab === 'settings');
+    requestAnimationFrame(() => { document.getElementById('main').scrollTop = scrollPositions[tab] || 0; });
+    if(tab === 'growth') renderChart();
+  }
+
+  /* ============================================================ 日付入力（単一欄：テンキー＋スラッシュ自動区切り／カレンダー併用） ============================================================
+     - テキスト欄に YYYY/MM/DD を入力。数字だけ打てば区切りスラッシュを自動挿入。
+     - カレンダーボタンでネイティブの日付ピッカーを開き、選択結果をテキスト欄へ反映。
+     - getDateISO(prefix) で ISO(YYYY-MM-DD) を取得、setDate(prefix,iso) でセット。 */
+  function buildDateSelects(){
+    // 記録日系は初期値を今日に。生年月日は空のまま。
+    const today = new Date().toISOString().slice(0,10);
+    setDate('gd', today);
+    setDate('hd', today);
+    // pb（生年月日）は空のまま
+  }
+
+  /* 入力中：数字を抽出し YYYY/MM/DD 形式に整形してスラッシュを自動挿入 */
+  function onDateTextInput(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(!el) return;
+    // 数字以外を除去（最大8桁=YYYYMMDD）
+    let digits = el.value.replace(/[^0-9]/g,'').slice(0,8);
+    let formatted = digits;
+    if(digits.length > 4 && digits.length <= 6){
+      formatted = digits.slice(0,4) + '/' + digits.slice(4);
+    }else if(digits.length > 6){
+      formatted = digits.slice(0,4) + '/' + digits.slice(4,6) + '/' + digits.slice(6);
+    }
+    el.value = formatted;
+    // クリアボタン表示制御
+    const wrap = document.getElementById('wrap_'+prefix);
+    if(wrap) wrap.classList.toggle('has-val', el.value.length>0);
+    // ピッカーと月齢プレビューを同期
+    syncPickerFromText(prefix);
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* キー操作：Enterで確定（次へ移動 or 保存）。区切りは自動なので特別処理は最小限 */
+  function dateTextKeyDown(e, prefix){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      // 所属モーダルに応じて次のフィールドへ
+      if(prefix==='gd'){ document.getElementById('g_height')?.focus(); document.getElementById('g_height')?.select(); }
+      else if(prefix==='hd'){ document.getElementById('h_body')?.focus(); }
+      else if(prefix==='pb'){ /* 生年月日入力後は追加ボタンへ誘導（フォーカスのみ外す） */ e.target.blur(); }
+    }
+  }
+
+  /* カレンダーピッカーで選択された値をテキスト欄へ反映 */
+  function onDatePickerChange(prefix){
+    const picker = document.getElementById(prefix+'_picker');
+    if(!picker || !picker.value) return;
+    setDate(prefix, picker.value);
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* テキスト欄の値が妥当ならネイティブピッカーにも反映（カレンダー初期表示位置を合わせる） */
+  function syncPickerFromText(prefix){
+    const iso = getDateISO(prefix);
+    const picker = document.getElementById(prefix+'_picker');
+    if(picker) picker.value = iso || '';
+  }
+
+  /* クリアボタン */
+  function clearDateField(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(el){ el.value=''; el.focus(); }
+    const picker = document.getElementById(prefix+'_picker');
+    if(picker) picker.value='';
+    const wrap = document.getElementById('wrap_'+prefix);
+    if(wrap) wrap.classList.remove('has-val');
+    if(prefix==='gd') updateGrowthAgePreview();
+  }
+
+  /* テキスト欄から ISO日付(YYYY-MM-DD)を取得。不正・未入力ならnull */
+  function getDateISO(prefix){
+    const el = document.getElementById(prefix+'_text');
+    if(!el) return null;
+    const digits = el.value.replace(/[^0-9]/g,'');
+    if(digits.length !== 8) return null;
+    const y = +digits.slice(0,4), m = +digits.slice(4,6), d = +digits.slice(6,8);
+    // 妥当性チェック（実在する日付か）
+    if(m<1||m>12||d<1||d>31) return null;
+    const dt = new Date(y, m-1, d);
+    if(dt.getFullYear()!==y || dt.getMonth()!==m-1 || dt.getDate()!==d) return null;
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  /* ISO日付をテキスト欄＋ピッカーにセット */
+  function setDate(prefix, iso){
+    const el = document.getElementById(prefix+'_text');
+    const picker = document.getElementById(prefix+'_picker');
+    if(!iso){
+      if(el) el.value='';
+      if(picker) picker.value='';
+      const wrap=document.getElementById('wrap_'+prefix);
+      if(wrap) wrap.classList.remove('has-val');
+      return;
+    }
+    const [y,m,d] = iso.split('-');
+    if(el){
+      el.value = `${y}/${m}/${d}`;
+      const wrap=document.getElementById('wrap_'+prefix);
+      if(wrap) wrap.classList.add('has-val');
+    }
+    if(picker) picker.value = iso;
+  }
+
+  /* 成長モーダルの月齢プレビュー（誕生日から自動算出） */
+  function updateGrowthAgePreview(){
+    const el = document.getElementById('growthAgePreview');
+    // 人物選択行が表示されていればその値を、なければcurrentPersonIdを使う
+    const sel=document.getElementById('g_person');
+    const row=document.getElementById('growthPersonRow');
+    const pid = (row && row.style.display!=='none' && sel) ? sel.value
+              : (currentPersonId==='all' ? (sel?.value || data.persons[0]?.id) : currentPersonId);
+    const person = data.persons.find(p => p.id === pid);
+    const date = getDateISO('gd');
+    if(person && person.birthDate && date){
+      const age = calcAge(person.birthDate, date);
+      el.textContent = age ? `👤 ${person.name} ・ ${age}` : (person.name || '');
+    }else if(person){
+      el.textContent = person.birthDate ? '' : `👤 ${person.name}（誕生日未設定のため月齢は表示されません）`;
+    }else{
+      el.textContent = '';
+    }
+  }
+
+  /* ============================================================ 人物タブ描画（イベント再バインド方式で確実に動作） ============================================================ */
+  function renderPersonTabs(){
+    if(!currentPersonId && data.persons.length>0) currentPersonId = data.persons[0].id;
+
+    // 成長タブの人物切替（「全員」＋各人物）
+    const gEl = document.getElementById('growthPersonTabs');
+    gEl.innerHTML='';
+    if(data.persons.length===0){
+      gEl.innerHTML='<span style="font-size:13px;color:var(--text3)">設定タブから人物を追加してください</span>';
+    }else{
+      // 全員ボタン（複数人を同時表示）
+      const allBtn=document.createElement('button');
+      allBtn.className='person-tab'+(currentPersonId==='all'?' active':'');
+      allBtn.textContent='全員';
+      allBtn.addEventListener('click', ()=>{
+        currentPersonId='all';
+        renderPersonTabs(); renderGrowthList();
+      });
+      gEl.appendChild(allBtn);
+      data.persons.forEach(p=>{
+        const btn=document.createElement('button');
+        btn.className='person-tab'+(currentPersonId===p.id?' active':'');
+        const latestDate = latestGrowthDate(p.id);
+        const ageStr = (p.birthDate && latestDate) ? calcAge(p.birthDate, latestDate) : '';
+        btn.innerHTML = `${escHtml(p.name)}${ageStr?`<span class="pt-age"> ${ageStr}</span>`:''}`;
+        btn.addEventListener('click', ()=>{
+          currentPersonId = p.id;
+          renderPersonTabs();
+          renderGrowthList();
+        });
+        gEl.appendChild(btn);
+      });
+    }
+
+    // 健康タブの人物切替（全員＋各人物）
+    const hEl = document.getElementById('healthPersonTabs');
+    hEl.innerHTML='';
+    if(data.persons.length>0){
+      const allBtn=document.createElement('button');
+      allBtn.className='person-tab'+(healthPersonId==='all'?' active':'');
+      allBtn.textContent='全員';
+      allBtn.addEventListener('click', ()=>{ healthPersonId='all'; renderPersonTabs(); renderHealthList(); });
+      hEl.appendChild(allBtn);
+      data.persons.forEach(p=>{
+        const btn=document.createElement('button');
+        btn.className='person-tab'+(healthPersonId===p.id?' active':'');
+        btn.textContent=p.name;
+        btn.addEventListener('click', ()=>{ healthPersonId=p.id; renderPersonTabs(); renderHealthList(); });
+        hEl.appendChild(btn);
+      });
+    }
+  }
+
+  /* ある人物の最新成長記録日 */
+  function latestGrowthDate(personId){
+    const recs = data.growth.filter(r=>!r.deleted && r.personId===personId && r.date);
+    if(recs.length===0) return null;
+    return recs.reduce((a,b)=> String(a.date)>String(b.date)?a:b).date;
+  }
+
+  /* ============================================================ 成長リスト・サマリー ============================================================ */
+  function renderGrowthList(){
+    const showAll = currentPersonId==='all';
+    let records = data.growth.filter(r=>!r.deleted && (showAll || r.personId===currentPersonId));
+    records.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    const list=document.getElementById('growthList');
+    const empty=document.getElementById('growthEmpty');
+    list.innerHTML='';
+    if(records.length===0){
+      empty.style.display='';
+      renderSummary([]); renderLegend();
+      try{ renderChart(); }catch(e){ console.warn('renderChart skip:', e.message); }
+      return;
+    }
+    empty.style.display='none';
+    // 先にリストを描画（グラフが失敗しても一覧は必ず出す）
+    records.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      list.appendChild(buildGrowthItem(r, person, showAll));
+    });
+    // サマリーは単一人物のときのみ（全員では出さない）
+    renderSummary(showAll ? [] : records);
+    renderLegend();
+    try{ renderChart(); }catch(e){ console.warn('renderChart skip:', e.message); }
+  }
+
+  function buildGrowthItem(r, person, showName){
+    const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+    const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+    del.addEventListener('click',()=>softDelete('growth',r.id));
+    const ageStr=(person&&person.birthDate)?calcAge(person.birthDate, r.date):'';
+    const item=document.createElement('div'); item.className='record-item'+(r.locked?' locked':'');
+    item.style.cursor='pointer';
+    item.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
+        <div class="record-date">${formatDateJP(r.date)}</div>
+        ${showName && person?`<div style="font-size:11px;color:var(--accent);font-weight:700">${escHtml(person.name)}</div>`:''}
+        ${ageStr?`<div class="record-age">${ageStr}</div>`:''}
+      </div>
+      <div class="record-vals">
+        ${r.height!=null?`<div class="record-val"><span>${r.height}</span>身長cm</div>`:''}
+        ${r.weight!=null?`<div class="record-val"><span>${r.weight}</span>体重kg</div>`:''}
+        ${r.bmi!=null?`<div class="record-val"><span>${r.bmi}</span>BMI</div>`:''}
+        ${r.chestCirc!=null?`<div class="record-val"><span>${r.chestCirc}</span>胸囲cm</div>`:''}
+        ${r.headCirc!=null?`<div class="record-val"><span>${r.headCirc}</span>頭囲cm</div>`:''}
+      </div>
+      ${r.note?`<div style="font-size:11px;color:var(--text3);max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.note)}</div>`:''}
+      <div class="item-btn-row">
+        <button class="habit-hover-del">✕</button>
+        <button class="habit-hover-edit" title="編集">✏️</button>
+        <button class="item-lock${r.locked?' on':''}" title="ロック">${r.locked?'🔒':'🔓'}</button>
+      </div>
+    `;
+    item.addEventListener('click', e=>{
+      if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')) return;
+      openEditGrowth(r.id);
+    });
+    item.querySelector('.item-lock').addEventListener('click',()=>toggleItemLock('growth',r.id));
+    item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditGrowth(r.id));
+    item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('growth',r.id));
+    attachSwipe(wrap, del, ()=>softDelete('growth',r.id));
+    wrap.appendChild(del); wrap.appendChild(item);
+    return wrap;
+  }
+
+  /* 項目ごとのロック切替（ロック中は編集・削除不可） */
+  function toggleItemLock(type,id){
+    const r=data[type].find(x=>x.id===id); if(!r) return;
+    r.locked=!r.locked;
+    r.updatedAt=new Date().toISOString();
+    saveData(); renderGrowthList(); renderHealthList();
+    showToast(r.locked?'🔒 ロックしました':'🔓 ロック解除しました');
+  }
+
+  function renderSummary(records){
+    const el=document.getElementById('growthSummary'); el.innerHTML='';
+    if(records.length===0) return;
+    const latest=records[0];
+    [
+      {label:'身長',val:latest.height,unit:'cm'},
+      {label:'体重',val:latest.weight,unit:'kg'},
+      {label:'BMI',val:latest.bmi,unit:''},
+      {label:'胸囲',val:latest.chestCirc,unit:'cm'},
+      {label:'頭囲',val:latest.headCirc,unit:'cm'},
+    ].filter(c=>c.val!=null).forEach(c=>{
+      const chip=document.createElement('div'); chip.className='summary-chip';
+      chip.innerHTML=`<div class="sc-label">${c.label}</div><div class="sc-val">${c.val}<span class="sc-unit">${c.unit}</span></div><div class="sc-sub">${latest.date}</div>`;
+      el.appendChild(chip);
+    });
+  }
+
+  /* ============================================================ グラフ凡例（ON/OFFチップ式：取り消し線を使わない） ============================================================ */
+  function renderLegend(){
+    const el=document.getElementById('chartLegend'); el.innerHTML='';
+    const metrics=[
+      {key:'height',label:'身長',color:'#5b7cfa'},
+      {key:'weight',label:'体重',color:'#22b765'},
+      {key:'chestCirc',label:'胸囲',color:'#f0980b'},
+      {key:'headCirc',label:'頭囲',color:'#9c5cf5'},
+    ];
+    metrics.forEach(m=>{
+      const on=!!data.settings.chartVisible[m.key];
+      const chip=document.createElement('button');
+      chip.className='legend-chip '+(on?'on':'off');
+      // ON/OFFはボタンの濃さ（CSSのopacity/色）のみで表現。アイコンは付けない。
+      chip.innerHTML=`<span class="lc-dot" style="background:${m.color}"></span>${m.label}`;
+      chip.addEventListener('click',()=>{
+        data.settings.chartVisible[m.key]=!data.settings.chartVisible[m.key];
+        saveData();
+        renderLegend();
+        renderChart();
+      });
+      el.appendChild(chip);
+    });
+  }
+
+  /* ============================================================ グラフ描画（linear時間軸：外部アダプタ不要／yyyy年m月ラベル／ホバーで正確日付） ============================================================
+     Chart.jsのtime軸は date-fns アダプタCDNに依存し、読込失敗でグラフ全体が落ちるため、
+     x軸を linear（値=エポックms）にして目盛りラベルとツールチップを自前整形する。 */
+  function renderChart(){
+    const ctx=document.getElementById('chartCanvas');
+    if(!ctx) return;
+    if(chart){ try{chart.destroy();}catch(e){} chart=null; }
+    const showAll = currentPersonId==='all';
+    let recs=data.growth.filter(r=>!r.deleted && (showAll || r.personId===currentPersonId) && r.date && /^\d{4}-\d{2}-\d{2}/.test(String(r.date)));
+    recs.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    if(recs.length===0) return;
+    if(typeof Chart==='undefined') return;  // Chart.js未ロードでも他描画は止めない
+
+    const isDark=data.settings.darkMode;
+    const textColor=isDark?'#9aa0be':'#4a5068';
+    const gridColor=isDark?'#2a2f44':'#e8ebf3';
+
+    // 日付文字列→エポックms
+    const toMs = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d).getTime(); };
+    const vis=data.settings.chartVisible;
+    const datasets=[];
+
+    // 人物ごとの色パレット（全員表示用）
+    const personColors=['#5b7cfa','#22b765','#f0980b','#9c5cf5','#ec4899','#10b3c6','#e24b4a','#8b5cf6'];
+
+    if(showAll){
+      // 全員表示：人物ごとに色分け。指標は身長(実線)・体重(破線)を表示
+      data.persons.forEach((p,i)=>{
+        const pr=recs.filter(r=>r.personId===p.id);
+        if(pr.length===0) return;
+        const col=personColors[i%personColors.length];
+        const ser=(key)=>pr.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date),y:r[key]}));
+        if(vis.height) datasets.push({label:`${p.name} 身長`,data:ser('height'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2.5});
+        if(vis.weight) datasets.push({label:`${p.name} 体重`,data:ser('weight'),borderColor:col,backgroundColor:'transparent',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[5,3]});
+        if(vis.chestCirc) datasets.push({label:`${p.name} 胸囲`,data:ser('chestCirc'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2,borderDash:[2,2]});
+        if(vis.headCirc) datasets.push({label:`${p.name} 頭囲`,data:ser('headCirc'),borderColor:col,backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,pointRadius:2,borderDash:[1,2]});
+      });
+    }else{
+      // 単一人物：指標ごとに色分け
+      const series = key => recs.filter(r=>r[key]!=null).map(r=>({x:toMs(r.date), y:r[key]}));
+      if(vis.height)    datasets.push({label:'身長(cm)',data:series('height'),   borderColor:'#5b7cfa',backgroundColor:'rgba(91,124,250,.08)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5});
+      if(vis.weight)    datasets.push({label:'体重(kg)',data:series('weight'),   borderColor:'#22b765',backgroundColor:'rgba(34,183,101,.08)',yAxisID:'y2',tension:.3,spanGaps:true,pointRadius:2.5});
+      if(vis.chestCirc) datasets.push({label:'胸囲(cm)',data:series('chestCirc'),borderColor:'#f0980b',backgroundColor:'rgba(240,152,11,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+      if(vis.headCirc)  datasets.push({label:'頭囲(cm)',data:series('headCirc'), borderColor:'#9c5cf5',backgroundColor:'rgba(156,92,245,.06)',yAxisID:'y', tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    }
+
+    // データ期間に応じて目盛り間隔（月数）を決定
+    const firstMs=toMs(recs[0].date), lastMs=toMs(recs[recs.length-1].date);
+    const fd=new Date(firstMs), ld=new Date(lastMs);
+    const monthSpan=(ld.getFullYear()-fd.getFullYear())*12 + (ld.getMonth()-fd.getMonth());
+    let stepMonths;
+    if(monthSpan>72) stepMonths=12;        // 6年超 → 1年
+    else if(monthSpan>36) stepMonths=12;   // 3〜6年 → 1年
+    else if(monthSpan>18) stepMonths=6;    // 1.5〜3年 → 6ヶ月
+    else if(monthSpan>6) stepMonths=3;     // 半年〜1.5年 → 3ヶ月
+    else stepMonths=1;                     // 半年以内 → 1ヶ月
+
+    // 目盛り位置（各区切り月の1日）を生成
+    const ticks=[];
+    const start=new Date(fd.getFullYear(), fd.getMonth(), 1);
+    const end=new Date(ld.getFullYear(), ld.getMonth()+1, 1);
+    for(let t=new Date(start); t<=end; t.setMonth(t.getMonth()+stepMonths)){
+      ticks.push(new Date(t).getTime());
+    }
+
+    chart=new Chart(ctx,{
+      type:'line',
+      data:{datasets},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'nearest',axis:'x',intersect:false},
+        plugins:{
+          legend:{ display: showAll, position:'bottom', labels:{color:textColor,font:{size:10},boxWidth:18,padding:8} },
+          tooltip:{
+            callbacks:{
+              // ホバー時タイトル: 正確な測定日 yyyy年m月d日
+              title:(items)=>{
+                if(!items.length) return '';
+                const d=new Date(items[0].parsed.x);
+                return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+              },
+              label:(item)=>`${item.dataset.label}: ${item.parsed.y}`,
+            }
+          }
+        },
+        scales:{
+          x:{
+            type:'linear',
+            min:start.getTime(),
+            max:end.getTime(),
+            afterBuildTicks:(axis)=>{ axis.ticks=ticks.map(v=>({value:v})); },
+            ticks:{
+              color:textColor,maxRotation:50,minRotation:0,font:{size:9},autoSkip:false,
+              // 目盛りラベル: yyyy年m月
+              callback:(val)=>{ const d=new Date(val); return `${d.getFullYear()}年${d.getMonth()+1}月`; },
+            },
+            grid:{color:gridColor},
+          },
+          y:{position:'left',ticks:{color:textColor,font:{size:10}},grid:{color:gridColor},title:{display:true,text:'身長/囲(cm)',color:textColor,font:{size:10}}},
+          y2:{position:'right',ticks:{color:'#22b765',font:{size:10}},grid:{drawOnChartArea:false},title:{display:true,text:'体重(kg)',color:'#22b765',font:{size:10}}}
+        }
+      }
+    });
+  }
+
+  /* ============================================================ 健康リスト（フィルター適用） ============================================================ */
+  function renderHealthList(){
+    let records=data.healthRecords.filter(r=>!r.deleted);
+    // 人物フィルター
+    if(healthPersonId!=='all') records=records.filter(r=>r.personId===healthPersonId);
+    // カテゴリフィルター
+    if(healthCatFilter && healthCatFilter.size>0 && healthCatFilter.size<getCategories().length){
+      records=records.filter(r=>healthCatFilter.has(r.category));
+    }
+    // 期間フィルター（YYYY-MM単位）
+    if(healthPeriod.from) records=records.filter(r=> (r.date||'').slice(0,7) >= healthPeriod.from);
+    if(healthPeriod.to) records=records.filter(r=> (r.date||'').slice(0,7) <= healthPeriod.to);
+    // 並び: 予定を上に、日付降順
+    records.sort((a,b)=>{
+      const ap=a.status==='scheduled'?0:1, bp=b.status==='scheduled'?0:1;
+      if(ap!==bp) return ap-bp;
+      return (b.date||'').localeCompare(a.date||'');
+    });
+
+    // フィルター状態のボタン見た目更新
+    document.getElementById('catFilterBtn').classList.toggle('active', !!(healthCatFilter && healthCatFilter.size<getCategories().length));
+    document.getElementById('periodFilterBtn').classList.toggle('active', !!(healthPeriod.from||healthPeriod.to));
+    document.getElementById('healthCount').textContent = `${records.length}件`;
+
+    const list=document.getElementById('healthList');
+    const empty=document.getElementById('healthEmpty');
+    list.innerHTML='';
+    if(records.length===0){ empty.style.display=''; return; }
+    empty.style.display='none';
+
+    records.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      const cm=catMeta(r.category);
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+      del.addEventListener('click',()=>softDelete('healthRecords',r.id));
+      const item=document.createElement('div'); item.className='health-item'+(r.locked?' locked':'');
+      item.style.cursor='pointer';
+      const ageStr=(person&&person.birthDate&&r.date)?calcAge(person.birthDate,r.date):'';
+      const statusBadge = r.category==='ワクチン'
+        ? (r.status==='scheduled'
+            ? `<span class="health-status-badge" style="background:var(--orange-soft);color:var(--orange)">予定</span>`
+            : `<span class="health-status-badge" style="background:var(--green-soft);color:var(--green)">接種済</span>`)
+        : '';
+      item.innerHTML=`
+        <div class="health-info">
+          <!-- 1行目: 日付・人物・月齢 -->
+          <div class="health-meta">${r.date?formatDateJP(r.date):'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
+          <!-- 2行目: 登録テキスト（項目名＋本文） -->
+          <div class="health-name-row">
+            <span class="health-name">${escHtml(r.name||r.category)}${r.dose?` <span style="font-size:11px;color:var(--text3)">${r.dose}回目</span>`:''}</span>
+          </div>
+          ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
+          <!-- 3行目: カテゴリ・状態 -->
+          <div class="health-tag-row">
+            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon} ${r.category}</span>
+            ${statusBadge}
+          </div>
+        </div>
+        <div class="item-btn-row" style="align-self:flex-start">
+          <button class="habit-hover-del">✕</button>
+          <button class="habit-hover-edit" title="編集">✏️</button>
+          <button class="item-lock${r.locked?' on':''}" title="ロック">${r.locked?'🔒':'🔓'}</button>
+        </div>
+      `;
+      item.addEventListener('click', e=>{
+        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')) return;
+        openEditHealth(r.id);
+      });
+      item.querySelector('.item-lock').addEventListener('click',()=>toggleItemLock('healthRecords',r.id));
+      item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditHealth(r.id));
+      item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('healthRecords',r.id));
+      attachSwipe(wrap, del, ()=>softDelete('healthRecords',r.id));
+      wrap.appendChild(del); wrap.appendChild(item);
+      list.appendChild(wrap);
+    });
+  }
+
+  /* ============================================================ Excel風フィルター ============================================================ */
+  function closeAllPops(){ document.querySelectorAll('.filter-pop').forEach(p=>p.classList.remove('open')); }
+
+  /* ポップオーバーをボタン下に配置 */
+  function positionPop(pop, btn){
+    const r=btn.getBoundingClientRect();
+    // 画面左右にはみ出さないようクランプ（最小8px、右端も考慮）
+    const left=Math.max(8, Math.min(r.left, window.innerWidth-288));
+    pop.style.left = left + 'px';
+    pop.style.top = (r.bottom+6) + 'px';
+  }
+
+  function openCatFilter(e){
+    e.stopPropagation();
+    closeAllPops();
+    const pop=document.getElementById('catFilterPop');
+    const checks=document.getElementById('catFilterChecks');
+    // 現在の選択（null=全選択扱い）
+    const selected = healthCatFilter || new Set(getCategories().map(c=>c.key));
+    checks.innerHTML='';
+    getCategories().forEach(c=>{
+      const lbl=document.createElement('label'); lbl.className='filter-check';
+      lbl.innerHTML=`<input type="checkbox" value="${c.key}" ${selected.has(c.key)?'checked':''}> ${c.icon} ${c.key}`;
+      checks.appendChild(lbl);
+    });
+    positionPop(pop, e.currentTarget);
+    pop.classList.add('open');
+  }
+  function catFilterSelectAll(){
+    document.querySelectorAll('#catFilterChecks input').forEach(i=>i.checked=true);
+  }
+  function applyCatFilter(){
+    const checked=[...document.querySelectorAll('#catFilterChecks input:checked')].map(i=>i.value);
+    healthCatFilter = checked.length===getCategories().length ? null : new Set(checked);
+    closeAllPops();
+    renderHealthList();
+  }
+
+  function openPeriodFilter(e){
+    e.stopPropagation();
+    closeAllPops();
+    const pop=document.getElementById('periodFilterPop');
+    // プリセット
+    const presets=document.getElementById('periodPresets');
+    const now=new Date();
+    const ym=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const presetList=[
+      {label:'今年',from:`${now.getFullYear()}-01`,to:`${now.getFullYear()}-12`},
+      {label:'直近1年',from:ym(new Date(now.getFullYear()-1,now.getMonth())),to:ym(now)},
+      {label:'直近3ヶ月',from:ym(new Date(now.getFullYear(),now.getMonth()-2)),to:ym(now)},
+    ];
+    presets.innerHTML='';
+    presetList.forEach(p=>{
+      const btn=document.createElement('button'); btn.className='period-preset'; btn.textContent=p.label;
+      btn.addEventListener('click',()=>{
+        document.getElementById('periodFrom').value=p.from;
+        document.getElementById('periodTo').value=p.to;
+      });
+      presets.appendChild(btn);
+    });
+    document.getElementById('periodFrom').value=healthPeriod.from||'';
+    document.getElementById('periodTo').value=healthPeriod.to||'';
+    positionPop(pop, e.currentTarget);
+    pop.classList.add('open');
+  }
+  function applyPeriodFilter(){
+    healthPeriod.from=document.getElementById('periodFrom').value||null;
+    healthPeriod.to=document.getElementById('periodTo').value||null;
+    closeAllPops();
+    renderHealthList();
+  }
+  function clearPeriodFilter(){
+    healthPeriod={from:null,to:null};
+    document.getElementById('periodFrom').value='';
+    document.getElementById('periodTo').value='';
+    closeAllPops();
+    renderHealthList();
+  }
+  function resetHealthFilters(){
+    healthCatFilter=null; healthPeriod={from:null,to:null};
+    renderHealthList();
+  }
+
+  /* ============================================================ 削除（2段階） ============================================================ */
+  function softDelete(type,id){
+    const rec=data[type].find(r=>r.id===id); if(!rec) return;
+    if(rec.locked){ showToast('🔒 ロック中の項目は削除できません'); return; }
+    rec.deleted=true; rec.deletedAt=new Date().toISOString();
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash();
+    showToast('削除しました（設定→ゴミ箱から復元可）');
+  }
+  function restoreItem(type,id){
+    const rec=data[type].find(r=>r.id===id); if(!rec) return;
+    delete rec.deleted; delete rec.deletedAt;
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('復元しました');
+  }
+  function purgeItem(type,id){
+    data[type]=data[type].filter(r=>r.id!==id); saveData(); renderTrash(); showToast('完全に削除しました');
+  }
+  function restoreAll(){
+    ['growth','healthRecords'].forEach(t=>data[t].forEach(r=>{if(r.deleted){delete r.deleted;delete r.deletedAt;}}));
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全て復元しました');
+  }
+  function purgeAll(){
+    if(!confirm('ゴミ箱を空にします。元に戻せません。')) return;
+    ['growth','healthRecords'].forEach(t=>data[t]=data[t].filter(r=>!r.deleted));
+    saveData(); renderTrash(); showToast('完全削除しました');
+  }
+
+  function renderTrash(){
+    const all=[
+      ...data.growth.filter(r=>r.deleted).map(r=>({...r,_type:'growth',_label:'成長'})),
+      ...data.healthRecords.filter(r=>r.deleted).map(r=>({...r,_type:'healthRecords',_label:'健康'})),
+    ].sort((a,b)=>(b.deletedAt||'').localeCompare(a.deletedAt||''));
+    const list=document.getElementById('trashList');
+    const empty=document.getElementById('trashEmpty');
+    const bar=document.getElementById('trashBar');
+    list.innerHTML='';
+    if(all.length===0){ empty.style.display=''; bar.style.display='none'; return; }
+    empty.style.display='none'; bar.style.display='';
+    all.forEach(r=>{
+      const person=data.persons.find(p=>p.id===r.personId);
+      const desc=r._type==='growth'
+        ? `身長:${r.height??'-'} 体重:${r.weight??'-'}`
+        : `${r.category}: ${r.name||r.body||''}`.slice(0,40);
+      const item=document.createElement('div'); item.className='record-item deleted';
+      item.innerHTML=`
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--text3)">${r._label} ${r.date||''} ${person?'・'+escHtml(person.name):''}</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(desc)}</div>
+        </div>
+        <button class="btn-mini restore">復元</button>
+        <button class="btn-mini purge">完全削除</button>
+      `;
+      const btns=item.querySelectorAll('button');
+      btns[0].addEventListener('click',()=>restoreItem(r._type,r.id));
+      btns[1].addEventListener('click',()=>purgeItem(r._type,r.id));
+      list.appendChild(item);
+    });
+  }
+
+  /* ============================================================ モーダル ============================================================ */
+  function openModal(id){
+    const el=document.getElementById(id); el.classList.add('open');
+    setTimeout(()=>{ const f=el.querySelector('input:not([type=hidden]),textarea'); }, 280);
+  }
+  function closeModal(id){
+    document.getElementById(id).classList.remove('open');
+    // 編集状態をリセット（閉じたら新規モードに戻す）
+    if(id==='modalGrowth') editingGrowthId=null;
+    if(id==='modalHealth') editingHealthId=null;
+  }
+
+  function openAddModal(){
+    if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
+    if(currentTab==='growth'){
+      editingGrowthId=null;  // 新規モード
+      document.getElementById('modalGrowthTitle').textContent='📏 成長記録を追加';
+      // 人物選択を構築（全員表示中は選択必須、単一表示中はその人物を既定）
+      buildGrowthPersonSelect(currentPersonId==='all' ? (data.persons[0]?.id) : currentPersonId);
+      document.getElementById('growthPersonRow').style.display = (currentPersonId==='all') ? '' : 'none';
+      resetGrowthForm(); updateGrowthAgePreview(); openModal('modalGrowth');
+    }
+    else if(currentTab==='health'){
+      editingHealthId=null;  // 新規モード
+      document.getElementById('modalHealthTitle').textContent='🩺 健康記録を追加';
+      resetHealthForm(); openModal('modalHealth');
+    }
+  }
+
+  /* 成長モーダルの人物セレクトを構築 */
+  function buildGrowthPersonSelect(selectedId){
+    const sel=document.getElementById('g_person');
+    if(!sel) return;
+    sel.innerHTML='';
+    data.persons.forEach(p=>{
+      const o=document.createElement('option'); o.value=p.id; o.textContent=p.name;
+      sel.appendChild(o);
+    });
+    if(selectedId) sel.value=selectedId;
+    // 人物変更で月齢プレビューを更新
+    sel.onchange=()=>updateGrowthAgePreview();
+  }
+
+  /* ============================================================ 編集モードでモーダルを開く ============================================================ */
+  /* 成長記録を編集 */
+  function openEditGrowth(id){
+    const r=data.growth.find(x=>x.id===id); if(!r) return;
+    if(r.locked){ showToast('🔒 ロック中の項目は編集できません'); return; }
+    editingGrowthId=id;  // 編集モード
+    document.getElementById('modalGrowthTitle').textContent='📏 成長記録を編集';
+    // 人物選択を表示し、対象人物を選択状態にする（全員表示でもタブを壊さない）
+    buildGrowthPersonSelect(r.personId);
+    document.getElementById('growthPersonRow').style.display='';
+    // 既存値をフォームへ
+    setDate('gd', r.date);
+    document.getElementById('g_height').value = r.height!=null?r.height:'';
+    document.getElementById('g_weight').value = r.weight!=null?r.weight:'';
+    document.getElementById('g_chest').value = r.chestCirc!=null?r.chestCirc:'';
+    document.getElementById('g_head').value = r.headCirc!=null?r.headCirc:'';
+    document.getElementById('g_note').value = r.note||'';
+    ['gheight','gweight','gchest','ghead','gnote'].forEach(fieldUpdate);
+    updateGrowthAgePreview();
+    openModal('modalGrowth');
+  }
+
+  /* 健康記録を編集 */
+  function openEditHealth(id){
+    const r=data.healthRecords.find(x=>x.id===id); if(!r) return;
+    if(r.locked){ showToast('🔒 ロック中の項目は編集できません'); return; }
+    editingHealthId=id;  // 編集モード
+    document.getElementById('modalHealthTitle').textContent='🩺 健康記録を編集';
+    // カテゴリ復元
+    selectedCat=r.category||'その他';
+    buildHealthCatPills(); onCatChange();
+    document.getElementById('h_name').value=r.name||'';
+    document.getElementById('h_body').value=r.body||'';
+    document.getElementById('h_dose').value=r.dose!=null?r.dose:'';
+    document.getElementById('h_status').value=r.status||'done';
+    setDate('hd', r.date);
+    ['hname','hbody','hdose'].forEach(fieldUpdate);
+    openModal('modalHealth');
+  }
+
+  function resetGrowthForm(){
+    ['g_height','g_weight','g_chest','g_head','g_note'].forEach(id=>document.getElementById(id).value='');
+    const t=new Date();
+    setDate('gd', t.toISOString().slice(0,10));
+    ['gheight','gweight','gchest','ghead','gnote'].forEach(fieldUpdate);
+  }
+
+  /* ============================================================ 健康モーダル カテゴリピル ============================================================ */
+  let selectedCat='ワクチン';
+  function buildHealthCatPills(){
+    const el=document.getElementById('healthCatPills'); el.innerHTML='';
+    getCategories().forEach(c=>{
+      const pill=document.createElement('button');
+      pill.className='cat-pill'+(c.key===selectedCat?' selected':'');
+      pill.style.cssText = c.key===selectedCat
+        ? `background:var(--${c.color}-soft);border-color:var(--${c.color});color:var(--${c.color})`
+        : '';
+      pill.innerHTML=`${c.icon} ${c.key}`;
+      pill.addEventListener('click',()=>{ selectedCat=c.key; buildHealthCatPills(); onCatChange(); });
+      el.appendChild(pill);
+    });
+  }
+  /* カテゴリ変更でワクチン専用フィールドの表示切替・ラベル調整 */
+  function onCatChange(){
+    const isVac=selectedCat==='ワクチン';
+    document.getElementById('vaccineFields').style.display=isVac?'flex':'none';
+    const nameLabel=document.getElementById('healthNameLabel');
+    const nameInput=document.getElementById('h_name');
+    if(isVac){ nameLabel.textContent='ワクチン名'; nameInput.placeholder='例: インフルエンザ, MR, 帯状疱疹'; }
+    else if(selectedCat==='通院'){ nameLabel.textContent='医院・診療科'; nameInput.placeholder='例: ○○小児科'; }
+    else if(selectedCat==='症状'){ nameLabel.textContent='症状名'; nameInput.placeholder='例: 発熱, 咳'; }
+    else if(selectedCat==='薬'){ nameLabel.textContent='薬名'; nameInput.placeholder='例: カロナール'; }
+    else if(selectedCat==='検査'){ nameLabel.textContent='検査名'; nameInput.placeholder='例: 血液検査, 健診'; }
+    else if(selectedCat==='発達'){ nameLabel.textContent='項目'; nameInput.placeholder='例: 寝返り, 初語'; }
+    else{ nameLabel.textContent='項目名'; nameInput.placeholder='内容を入力'; }
+  }
+  function resetHealthForm(){
+    selectedCat='ワクチン';
+    buildHealthCatPills(); onCatChange();
+    document.getElementById('h_name').value='';
+    document.getElementById('h_body').value='';
+    document.getElementById('h_dose').value='';
+    document.getElementById('h_status').value='done';
+    setDate('hd', new Date().toISOString().slice(0,10));
+    ['hname','hbody','hdose'].forEach(fieldUpdate);
+  }
+
+  /* ============================================================ 入力フィールド補助 ============================================================ */
+  function fieldUpdate(key){
+    const el=document.getElementById('wrap_'+key); if(!el) return;
+    const input=el.querySelector('input,textarea'); if(!input) return;
+    el.classList.toggle('has-val', input.value.length>0);
+  }
+  function clearField(inputId,key){
+    const el=document.getElementById(inputId); if(!el) return;
+    el.value=''; fieldUpdate(key); el.focus();
+  }
+  /* Enter確定（テキスト系→次へ／最後で保存） */
+  function formKeyDown(e,modalId){
+    if(e.key==='Enter' && !e.shiftKey){
+      e.preventDefault();
+      const inputs=[...document.getElementById(modalId).querySelectorAll('input:not([disabled]),textarea')];
+      const idx=inputs.indexOf(document.activeElement);
+      if(idx>=0 && idx<inputs.length-1){
+        inputs[idx+1].focus();
+        if(inputs[idx+1].type==='number') inputs[idx+1].select();
+      }else{
+        if(modalId==='modalGrowth') saveGrowth();
+        else if(modalId==='modalHealth') saveHealth();
+      }
+    }
+  }
+  /* メモはCtrl+Enterで保存 */
+  function healthBodyKeyDown(e){
+    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); saveHealth(); }
+  }
+
+  /* ============================================================ 保存（新規追加 / 編集更新の両対応） ============================================================ */
+  function saveGrowth(){
+    const date=getDateISO('gd');
+    if(!date){ showToast('日付を選択してください'); return; }
+    const h=parseFloat(document.getElementById('g_height').value)||null;
+    const w=parseFloat(document.getElementById('g_weight').value)||null;
+    const bmi=(h&&w)?Math.round(w/(h/100)**2*10)/10:null;
+    const note=document.getElementById('g_note').value.trim();
+    const chestCirc=parseFloat(document.getElementById('g_chest').value)||null;
+    const headCirc=parseFloat(document.getElementById('g_head').value)||null;
+
+    if(editingGrowthId){
+      // ── 編集：既存レコードを更新 ──
+      const r=data.growth.find(x=>x.id===editingGrowthId);
+      if(r){
+        // 編集時も人物変更を反映
+        const sel=document.getElementById('g_person');
+        const pid = sel?.value || r.personId;
+        Object.assign(r,{ personId:pid, date, height:h, weight:w, chestCirc, headCirc, bmi, note, updatedAt:new Date().toISOString() });
+      }
+      editingGrowthId=null;
+      saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('更新しました');
+    }else{
+      // ── 新規追加 ──
+      // 対象人物: 人物選択行が出ていればその値、なければcurrentPersonId（全員なら先頭）
+      const row=document.getElementById('growthPersonRow');
+      const sel=document.getElementById('g_person');
+      let personId = (row && row.style.display!=='none' && sel) ? sel.value
+                   : (currentPersonId==='all' ? (data.persons[0]?.id) : currentPersonId);
+      if(!personId){ showToast('人物を選択してください'); return; }
+      data.growth.push({
+        id:uid(), personId, date,
+        height:h, weight:w, chestCirc, headCirc, bmi, note,
+        createdAt:new Date().toISOString(),
+      });
+      saveData(); renderGrowthList(); renderPersonTabs(); closeModal('modalGrowth'); showToast('保存しました');
+    }
+  }
+
+  function saveHealth(){
+    const name=document.getElementById('h_name').value.trim();
+    const body=document.getElementById('h_body').value.trim();
+    if(!name && !body){ showToast('項目名か内容を入力してください'); return; }
+    const date=getDateISO('hd');
+    const isVac=selectedCat==='ワクチン';
+    const status=isVac?document.getElementById('h_status').value:undefined;
+    const dose=isVac?(parseInt(document.getElementById('h_dose').value)||null):undefined;
+
+    if(editingHealthId){
+      // ── 編集：既存レコードを更新 ──
+      const r=data.healthRecords.find(x=>x.id===editingHealthId);
+      if(r){
+        r.category=selectedCat; r.name=name; r.body=body; r.date=date;
+        r.updatedAt=new Date().toISOString();
+        // ワクチン専用項目はカテゴリに応じて設定/削除
+        if(isVac){ r.status=status; r.dose=dose; }
+        else { delete r.status; delete r.dose; }
+      }
+      editingHealthId=null;
+      saveData(); renderHealthList(); closeModal('modalHealth'); showToast('更新しました');
+    }else{
+      // ── 新規追加 ──
+      const personId=healthPersonId!=='all'?healthPersonId:data.persons[0]?.id;
+      if(!personId){ showToast('人物を選択してください'); return; }
+      const rec={ id:uid(), personId, category:selectedCat, name, body, date, createdAt:new Date().toISOString() };
+      if(isVac){ rec.status=status; rec.dose=dose; }
+      data.healthRecords.push(rec);
+      saveData(); renderHealthList(); closeModal('modalHealth'); showToast('保存しました');
+    }
+  }
+
+  /* ============================================================ スワイプ削除 ============================================================ */
+  function attachSwipe(wrap,delBtn,onDelete){
+    let startX=null, open=false;
+    wrap.addEventListener('touchstart',e=>{startX=e.touches[0].clientX;},{passive:true});
+    wrap.addEventListener('touchend',e=>{
+      if(startX===null) return;
+      const dx=e.changedTouches[0].clientX-startX;
+      if(dx<-50&&!open){ delBtn.classList.add('visible'); open=true; }
+      else if(dx>20&&open){ delBtn.classList.remove('visible'); open=false; }
+      startX=null;
+    },{passive:true});
+    document.addEventListener('touchstart',e=>{
+      if(!wrap.contains(e.target)&&open){ delBtn.classList.remove('visible'); open=false; }
+    },{passive:true});
+  }
+
+  /* ============================================================ 人物管理 ============================================================ */
+  function renderPersonList(){
+    const el=document.getElementById('personList'); el.innerHTML='';
+    if(data.persons.length===0){
+      el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:8px 0">まだ人物が登録されていません</div>';
+      return;
+    }
+    data.persons.forEach(p=>{
+      const row=document.createElement('div'); row.className='setting-row';
+      const ageStr=p.birthDate?` ・ ${calcAge(p.birthDate,new Date().toISOString().slice(0,10))}`:'';
+      row.innerHTML=`
+        <div style="flex:1">
+          <div class="setting-label">${escHtml(p.name)}</div>
+          <div class="setting-desc">${p.birthDate?'生年月日: '+p.birthDate+ageStr:'生年月日未設定'}</div>
+        </div>
+        <button class="btn-mini purge">削除</button>
+      `;
+      row.querySelector('button').addEventListener('click',()=>removePerson(p.id));
+      el.appendChild(row);
+    });
+  }
+  function addPerson(){
+    const name=document.getElementById('newPersonName').value.trim();
+    if(!name){ showToast('名前を入力してください'); return; }
+    const birth=getDateISO('pb'); // 未入力ならnull
+    data.persons.push({ id:uid(), name, birthDate:birth, createdAt:new Date().toISOString() });
+    document.getElementById('newPersonName').value='';
+    fieldUpdate('pname');
+    // 生年月日欄を空に戻す
+    clearDateField('pb');
+    saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList();
+    showToast(name+'を追加しました');
+  }
+  function removePerson(id){
+    if(!confirm('この人物を削除しますか？（記録データは残ります）')) return;
+    data.persons=data.persons.filter(p=>p.id!==id);
+    if(currentPersonId===id) currentPersonId=data.persons[0]?.id||null;
+    if(healthPersonId===id) healthPersonId='all';
+    saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList(); renderHealthList();
+  }
+
+  /* ============================================================ カテゴリ管理 ============================================================ */
+  /* 色選択プルダウンの初期化（1度だけ） */
+  function initCatColorSelect(){
+    const sel=document.getElementById('newCatColor'); if(!sel||sel.options.length) return;
+    const colorLabels={teal:'青緑',accent:'青',red:'赤',purple:'紫',orange:'橙',green:'緑',pink:'桃',text3:'灰'};
+    CAT_COLORS.forEach(c=>{
+      const o=document.createElement('option'); o.value=c; o.textContent=colorLabels[c]||c; sel.appendChild(o);
+    });
+  }
+  /* カテゴリ一覧の描画（各行に削除ボタン） */
+  function renderCategoryList(){
+    const el=document.getElementById('categoryList'); if(!el) return;
+    el.innerHTML='';
+    const cats=getCategories();
+    cats.forEach(c=>{
+      // 使用件数（削除時の注意表示用）
+      const used=data.healthRecords.filter(r=>!r.deleted && r.category===c.key).length;
+      const row=document.createElement('div'); row.className='setting-row';
+      row.innerHTML=`
+        <div class="health-icon" style="width:30px;height:30px;font-size:15px;background:var(--${c.color}-soft);color:var(--${c.color})">${c.icon}</div>
+        <div style="flex:1">
+          <div class="setting-label">${escHtml(c.key)}</div>
+          <div class="setting-desc">${used>0?used+'件で使用中':'未使用'}</div>
+        </div>
+        <button class="btn-mini purge">削除</button>
+      `;
+      row.querySelector('button').addEventListener('click',()=>removeCategory(c.key));
+      el.appendChild(row);
+    });
+  }
+  /* カテゴリ追加 */
+  function addCategory(){
+    const name=document.getElementById('newCatName').value.trim();
+    if(!name){ showToast('カテゴリ名を入力してください'); return; }
+    // 重複チェック
+    if(getCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
+    const icon=(document.getElementById('newCatIcon').value.trim())||'🏷';
+    const color=document.getElementById('newCatColor').value||'text3';
+    // data.categoriesが空ならデフォルトを実体化してから追加
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    data.categories.push({ key:name, icon, color });
+    // 入力欄クリア
+    document.getElementById('newCatName').value='';
+    document.getElementById('newCatIcon').value='';
+    fieldUpdate('catname');
+    saveData(); renderCategoryList(); buildHealthCatPills();
+    showToast(name+'を追加しました');
+  }
+  /* カテゴリ削除（使用中の記録は「その他」に付け替え） */
+  function removeCategory(key){
+    const cats=getCategories();
+    if(cats.length<=1){ showToast('最後のカテゴリは削除できません'); return; }
+    const used=data.healthRecords.filter(r=>!r.deleted && r.category===key).length;
+    const msg=used>0
+      ? `「${key}」を削除します。\nこのカテゴリの記録 ${used}件は「その他」に変更されます。よろしいですか？`
+      : `「${key}」を削除しますか？`;
+    if(!confirm(msg)) return;
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    data.categories=data.categories.filter(c=>c.key!==key);
+    // 付け替え先（「その他」が無ければ先頭カテゴリ）
+    const fallback=data.categories.some(c=>c.key==='その他')?'その他':data.categories[0].key;
+    data.healthRecords.forEach(r=>{ if(r.category===key) r.category=fallback; });
+    // フィルタやモーダルの選択が消えたカテゴリを指していたら調整
+    if(selectedCat===key) selectedCat=data.categories[0].key;
+    if(healthCatFilter) healthCatFilter.delete(key);
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('削除しました');
+  }
+  /* デフォルトに戻す */
+  function resetCategories(){
+    if(!confirm('カテゴリを初期状態に戻します。\n追加したカテゴリは削除されます（記録のカテゴリ名は残ります）。よろしいですか？')) return;
+    data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    selectedCat=data.categories[0].key;
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('初期カテゴリに戻しました');
+  }
+
+  /* ============================================================ インポート（対象人物に紐付け） ============================================================ */
+  function importJSON(e){
+    const file=e.target.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const imported=JSON.parse(ev.target.result);
+        // growthDataフォーマット（Excel変換データ）→ 人物紐付けUIを表示
+        if(imported.growthData){
+          pendingImport=imported;
+          showImportMapping(imported);
+        }
+        // フルバックアップフォーマット
+        else if(imported.persons!==undefined || imported.growth!==undefined){
+          if(!confirm('現在のデータを上書きします。よろしいですか？')) return;
+          data.persons=imported.persons||data.persons;
+          data.growth=imported.growth||data.growth;
+          data.healthRecords=imported.healthRecords||imported.healthRecords||data.healthRecords;
+          saveData(); init(); showToast('インポート完了');
+        }else{
+          showToast('対応していない形式です');
+        }
+      }catch(err){ showToast('JSONの読み込みに失敗しました'); }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  }
+
+  /* インポートデータの各personIdを、登録済み人物に割り当てるUI */
+  function showImportMapping(imported){
+    const desc=document.getElementById('importDesc');
+    const wrap=document.getElementById('importMapping');
+    if(data.persons.length===0){
+      desc.innerHTML='⚠️ 先に「人物管理」で人物を追加してください。';
+      wrap.innerHTML='';
+      openModal('modalImport');
+      return;
+    }
+    desc.textContent='インポートデータの各系列を、登録済みの人物に割り当ててください。';
+    wrap.innerHTML='';
+    imported.growthData.forEach((pd,i)=>{
+      const count=pd.records.length;
+      const field=document.createElement('div'); field.className='form-row';
+      let opts='<option value="">（取り込まない）</option>';
+      data.persons.forEach(p=> opts+=`<option value="${p.id}">${escHtml(p.name)}</option>`);
+      // デフォルトで順番に割当
+      const defaultId=data.persons[i]?.id||'';
+      field.innerHTML=`
+        <div class="form-field" style="flex:1">
+          <label>系列 ${i+1}（${escHtml(pd.personId||'')} ・ ${count}件）→ 割当先</label>
+          <select class="form-input import-map" data-idx="${i}">${opts}</select>
+        </div>`;
+      wrap.appendChild(field);
+      field.querySelector('select').value=defaultId;
+    });
+    openModal('modalImport');
+  }
+
+  function confirmImport(){
+    if(!pendingImport) return;
+    const maps=[...document.querySelectorAll('.import-map')];
+    let added=0;
+    maps.forEach(sel=>{
+      const idx=parseInt(sel.dataset.idx);
+      const personId=sel.value;
+      if(!personId) return;
+      const pd=pendingImport.growthData[idx];
+      pd.records.forEach(r=>{
+        // 重複チェック（同person+同date）
+        const exists=data.growth.some(g=>g.personId===personId && g.date===r.date);
+        if(!exists){
+          data.growth.push({
+            id:uid(), personId, date:r.date,
+            height:r.height??null, weight:r.weight??null,
+            chestCirc:r.chestCirc??null, headCirc:r.headCirc??null,
+            bmi:r.bmi??((r.height&&r.weight)?Math.round(r.weight/(r.height/100)**2*10)/10:null),
+            note:'', createdAt:new Date().toISOString(),
+          });
+          added++;
+        }
+      });
+    });
+    pendingImport=null;
+    normalizeData();   // 取り込み後に型を整える
+    saveData();
+    closeModal('modalImport');
+    renderPersonTabs(); renderGrowthList();
+    showToast(`${added}件を取り込みました`);
+  }
+
+  function exportJSON(){
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='karada-log-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click(); showToast('エクスポートしました');
+  }
+  function clearAllData(){
+    if(!confirm('全ての記録を削除します。元に戻せません。')) return;
+    data.growth=[]; data.healthRecords=[];
+    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全データ削除しました');
+  }
+
+  /* ============================================================ GAS接続管理（接続・解除・状態表示） ============================================================ */
+  /* 接続状態の表示更新（ステータス文言＋ボタン出し分け） */
+  function renderGasStatus(){
+    const statusEl=document.getElementById('gasStatus');
+    const connectBtn=document.getElementById('gasConnectBtn');
+    const disconnectBtn=document.getElementById('gasDisconnectBtn');
+    const pushBtn=document.getElementById('btnPush');
+    const pullBtn=document.getElementById('btnPull');
+    if(!statusEl) return;
+    const setOpacity=(v)=>{ if(pushBtn) pushBtn.style.opacity=v; if(pullBtn) pullBtn.style.opacity=v; };
+    if(data.settings.gasConnected && data.settings.gasUrl){
+      // 接続済み
+      statusEl.innerHTML='<span style="color:var(--green)">●</span> <span style="color:var(--green)">接続済み</span>';
+      connectBtn.textContent='🔄 再接続';
+      connectBtn.style.display='';
+      disconnectBtn.style.display='';
+      setOpacity('1');
+    }else{
+      // 未接続
+      statusEl.innerHTML='<span style="color:var(--text3)">○</span> <span style="color:var(--text3)">未接続</span>';
+      connectBtn.textContent='🔗 接続';
+      connectBtn.style.display='';
+      disconnectBtn.style.display='none';
+      setOpacity('.5');
+    }
+  }
+
+  /* 接続ボタン：URLを保存し、実際に疎通確認してから接続状態にする
+     POST(text/plain)を基本とし、失敗時はGETでフォールバック。
+     エラー原因を画面に出して切り分けできるようにする。 */
+  async function connectGas(){
+    const url=(document.getElementById('gasUrl').value||'').trim();
+    if(!url){ showToast('GAS URLを入力してください'); return; }
+    if(!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)){
+      if(!confirm('URLが /exec で終わる正しい形式か確認してください。\nこのまま接続を試みますか？')) return;
+    }
+    const btn=document.getElementById('gasConnectBtn');
+    const orig=btn.textContent;
+    btn.textContent='接続中...'; btn.disabled=true;
+
+    // 接続成功時の共通処理
+    const onSuccess=(json)=>{
+      data.settings.gasUrl=url;
+      data.settings.gasConnected=true;
+      if(json.data){
+        applyMergedData(json.data);  // ID単位マージ（人物・記録の消失防止）
+      }
+      saveData(); renderGasStatus();
+      renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+      renderCategoryList(); buildHealthCatPills();
+      showToast('✅ 接続しました（⬇受信済み）', 2600);
+    };
+
+    try{
+      let json=null;
+      // ── 試行1: POST（pull＝受信のみ。接続時に意図せずローカルを送信しない） ──
+      try{
+        const res=await fetch(url,{
+          method:'POST',
+          body:JSON.stringify({action:'pull'}),
+          headers:{'Content-Type':'text/plain;charset=utf-8'},
+          redirect:'follow',
+        });
+        const text=await res.text();
+        // GASが正常ならJSON。HTML（ログイン画面等）が返る場合に備えてtextで受けてからパース
+        try{ json=JSON.parse(text); }
+        catch(parseErr){
+          console.warn('POST応答がJSONでない:', text.slice(0,200));
+          json=null;
+        }
+      }catch(postErr){
+        console.warn('POST失敗:', postErr.message);
+        json=null;
+      }
+
+      // ── 試行2: POSTがダメならGETで疎通だけ確認 ──
+      if(!json){
+        const res2=await fetch(url,{method:'GET',redirect:'follow'});
+        const text2=await res2.text();
+        try{ json=JSON.parse(text2); }
+        catch(e2){
+          // GETもJSONでない → 高確率でアクセス権/ログイン問題
+          showToast('接続失敗: 応答がJSONではありません（アクセス権を「全員」にして再デプロイしてください）', 4000);
+          return;
+        }
+      }
+
+      if(json && json.status==='ok'){
+        onSuccess(json);
+      }else{
+        showToast('接続エラー: '+(json && json.message ? json.message : '応答が不正です'), 3500);
+      }
+    }catch(e){
+      // ネットワーク層の失敗（CORS / URL誤り / オフライン 等）
+      console.error('connectGas error:', e);
+      showToast('接続失敗: '+(e.message||'ネットワークエラー')+'（URLとネット接続を確認）', 4000);
+    }finally{
+      btn.textContent=orig; btn.disabled=false;
+    }
+  }
+
+  /* 解除ボタン：接続フラグをOFFにする（URL自体は残すか確認） */
+  function disconnectGas(){
+    if(!confirm('GAS連携を解除します。\n（ローカルのデータは残ります）')) return;
+    data.settings.gasConnected=false;
+    saveData();
+    renderGasStatus();
+    showToast('🔌 連携を解除しました');
+  }
+
+  /* ============================================================ GAS送信・受信（分離） ============================================================ */
+  /* 共通: GASへPOSTしてJSONを返す（失敗時はnull＋トースト） */
+  async function gasRequest(action, includeData){
+    const url=(document.getElementById('gasUrl')?.value||data.settings.gasUrl||'').trim();
+    if(!url || !data.settings.gasConnected){
+      showToast('先に設定タブでGASに接続してください'); switchTab('settings'); return null;
+    }
+    data.settings.gasUrl=url;
+    const body={action};
+    if(includeData){
+      // 送信データ：削除済み(deleted:true)は除外し、有効なデータのみGASへ送る
+      // （削除データはローカルのみに保持する仕様）
+      const active = arr => (Array.isArray(arr)?arr:[]).filter(r=>!r.deleted);
+      body.data = {
+        persons: active(data.persons),
+        growth: active(data.growth),
+        healthRecords: active(data.healthRecords),
+        categories: data.categories || [],
+      };
+    }
+    // Content-Typeはtext/plainでCORSプリフライト回避
+    const res=await fetch(url,{method:'POST',body:JSON.stringify(body),headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow'});
+    const txt=await res.text();
+    try{ return JSON.parse(txt); }
+    catch(e){ showToast('失敗: 応答がJSONではありません'); return null; }
+  }
+
+  /* ⬆ 送信のみ: ローカルデータをGASへアップロード（受信・マージはしない） */
+  async function pushToGas(){
+    const btn=document.getElementById('btnPush'); btn.classList.add('busy');
+    try{
+      saveData();
+      const json=await gasRequest('push', true);
+      if(!json) return;
+      if(json.status==='ok'){
+        const c=json.counts||{};
+        showToast(`⬆ 送信: 人物${c.persons??'?'} 成長${c.growth??'?'} 健康${c.healthRecords??'?'}`, 2800);
+      }
+      else showToast('送信エラー: '+(json.message||'不明'));
+    }catch(e){ showToast('送信失敗: '+(e.message||'ネットワークエラー')); }
+    finally{ btn.classList.remove('busy'); }
+  }
+
+  /* ⬇ 受信のみ: GASのデータを取得してローカルへマージ（送信はしない） */
+  async function pullFromGas(){
+    const btn=document.getElementById('btnPull'); btn.classList.add('busy');
+    try{
+      const json=await gasRequest('pull', false);
+      if(!json) return;
+      if(json.status==='ok'){
+        if(json.data){
+          applyMergedData(json.data);  // ID単位マージ
+          // 受信後、選択中の人物が消えていたら有効な人物を選び直す
+          if(!currentPersonId || !data.persons.some(p=>p.id===currentPersonId)){
+            currentPersonId = data.persons[0]?.id || null;
+          }
+          saveData();
+          renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
+          renderCategoryList(); buildHealthCatPills();
+          // 受信件数を表示（同期できているか可視化）
+          const np=data.persons.length, ng=data.growth.filter(r=>!r.deleted).length, nh=data.healthRecords.filter(r=>!r.deleted).length;
+          showToast(`⬇ 受信: 人物${np} 成長${ng} 健康${nh}`, 2800);
+        }else{
+          showToast('⬇ 受信しましたがデータが空です', 2800);
+        }
+      }else showToast('受信エラー: '+(json.message||'不明'));
+    }catch(e){ showToast('受信失敗: '+(e.message||'ネットワークエラー')); }
+    finally{ btn.classList.remove('busy'); }
+  }
+
+  /* ============================================================ ユーティリティ ============================================================ */
+  function showToast(msg,ms=2200){
+    const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+    clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),ms);
+  }
+  function escHtml(s){ return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''; }
+
+  /* モーダル外クリックで閉じる */
+  document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('open'); }));
+
+  return {
+    init, toggleDark, switchTab,
+    openAddModal, closeModal, saveGrowth, saveHealth,
+    openEditGrowth, openEditHealth,
+    softDelete, restoreItem, purgeItem, restoreAll, purgeAll, toggleItemLock,
+    fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
+    onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
+    addPerson, removePerson,
+    addCategory, removeCategory, resetCategories,
+    importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
+    connectGas, disconnectGas,
+    openCatFilter, applyCatFilter, catFilterSelectAll,
+    openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
+  };
+})();
+
+document.addEventListener('DOMContentLoaded', App.init);
+
+/* ============================================================
+   PWA: Service Worker 登録（オフライン対応）
+   ============================================================ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.warn('SW registration failed:', err));
+  });
+}
+</script>
+</body>
+</html>
