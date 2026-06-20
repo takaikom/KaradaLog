@@ -8,6 +8,16 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.15: コピーを「複製して編集」に変更
+    - コピーボタン(📄)押下で、同じ内容を入力済みの新規追加モーダルを開く
+    - そのまま編集・保存で別レコードとして追加（元はそのまま）
+    - 複製先の人物は元レコードと同じ
+  v2.14: 健康管理の検索・コピー・並べ替え追加
+    - 検索ボックスを追加（項目名・本文・カテゴリを対象に絞り込み）
+    - 各カードに複製ボタン📄を追加（内容を引き継いだ編集画面を開き、別記録として保存）
+    - カテゴリフィルター内に検索欄を追加（カテゴリが多くても絞れる）
+    - テキスト（項目名＋本文）で昇順/降順の並べ替えボタンを追加
+      （日付順→昇順→降順を循環）
   v2.13: 健康カード並び修正・アプリ更新ボタン追加
     - 健康カードを 日付／登録テキスト／カテゴリ等 の順に修正（テキスト上・カテゴリ下）
     - 設定画面のGAS連携とデータの間に「アプリ更新」ボタンを追加
@@ -430,6 +440,32 @@ input,select,textarea{font-size:16px;}
 .filter-count{font-size:11px;color:var(--text3);margin-left:auto;font-weight:600;}
 .filter-reset{font-size:11px;color:var(--accent);font-weight:700;}
 
+/* 検索バー */
+.search-bar{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:9px 12px;box-shadow:var(--shadow);
+}
+.search-icon{font-size:14px;flex-shrink:0;opacity:.7;}
+.search-input{
+  flex:1;border:none;background:transparent;color:var(--text);min-width:0;
+  font-size:16px;outline:none;
+}
+.search-clear{
+  width:22px;height:22px;border-radius:50%;background:var(--surface2);
+  color:var(--text3);font-size:11px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+/* コピーボタン（カードのボタン行に追加） */
+.habit-hover-copy{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text2);font-size:13px;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,transform .1s;
+}
+.habit-hover-copy:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+.habit-hover-copy:active{transform:scale(.9);}
+
 /* フィルターポップオーバー（Excelのオートフィルタ風） */
 .filter-pop{
   position:fixed;z-index:600;
@@ -660,6 +696,13 @@ input,select,textarea{font-size:16px;}
   <!-- === 健康管理タブ（ワクチン統合） === -->
   <div class="page" id="page-health">
     <div class="person-tabs" id="healthPersonTabs"></div>
+    <!-- 検索ボックス -->
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" id="healthSearch" placeholder="記録を検索（項目名・本文・カテゴリ）"
+        inputmode="text" lang="ja" autocapitalize="off" oninput="App.onHealthSearch()">
+      <button class="search-clear" id="healthSearchClear" onclick="App.clearHealthSearch()" style="display:none">✕</button>
+    </div>
     <!-- Excel風フィルターバー -->
     <div class="filter-bar">
       <button class="filter-btn" id="catFilterBtn" onclick="App.openCatFilter(event)">
@@ -667,6 +710,9 @@ input,select,textarea{font-size:16px;}
       </button>
       <button class="filter-btn" id="periodFilterBtn" onclick="App.openPeriodFilter(event)">
         📅 期間<span class="fb-caret">▼</span>
+      </button>
+      <button class="filter-btn" id="sortBtn" onclick="App.toggleHealthSort()" title="テキストで並べ替え">
+        <span id="sortLabel">↕ 日付順</span>
       </button>
       <button class="filter-reset" onclick="App.resetHealthFilters()">クリア</button>
       <span class="filter-count" id="healthCount"></span>
@@ -976,6 +1022,8 @@ input,select,textarea{font-size:16px;}
 <!-- カテゴリフィルターポップオーバー -->
 <div class="filter-pop" id="catFilterPop">
   <div class="filter-pop-title">カテゴリで絞り込み</div>
+  <input type="text" class="form-input" id="catFilterSearch" placeholder="カテゴリを検索"
+    style="margin-bottom:8px;font-size:14px" inputmode="text" lang="ja" oninput="App.filterCatChecks()">
   <div id="catFilterChecks"></div>
   <div class="filter-pop-actions">
     <button class="fpa-clear" onclick="App.catFilterSelectAll()">全選択</button>
@@ -1028,9 +1076,12 @@ const App = (() => {
   // 健康フィルター状態
   let healthCatFilter = null;       // null=全て / Set(カテゴリ名)
   let healthPeriod = { from:null, to:null };
+  let healthSearch = '';            // 検索語
+  let healthSortMode = 'date';      // 'date' | 'text-asc' | 'text-desc'
   let pendingImport = null;         // インポート保留データ
   let editingGrowthId = null;       // 編集中の成長記録ID（null=新規追加）
   let editingHealthId = null;       // 編集中の健康記録ID（null=新規追加）
+  let duplicateHealthPersonId = null; // 複製時に引き継ぐ人物ID
 
   const LS_KEY = 'karadaLogData';
 
@@ -1678,16 +1729,36 @@ const App = (() => {
     // 期間フィルター（YYYY-MM単位）
     if(healthPeriod.from) records=records.filter(r=> (r.date||'').slice(0,7) >= healthPeriod.from);
     if(healthPeriod.to) records=records.filter(r=> (r.date||'').slice(0,7) <= healthPeriod.to);
-    // 並び: 予定を上に、日付降順
-    records.sort((a,b)=>{
-      const ap=a.status==='scheduled'?0:1, bp=b.status==='scheduled'?0:1;
-      if(ap!==bp) return ap-bp;
-      return (b.date||'').localeCompare(a.date||'');
-    });
+    // 検索フィルター（項目名・本文・カテゴリを対象、大文字小文字区別なし）
+    if(healthSearch){
+      const q=healthSearch.toLowerCase();
+      records=records.filter(r=>{
+        const hay = `${r.name||''} ${r.body||''} ${r.category||''}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    // 並べ替え
+    if(healthSortMode==='text-asc' || healthSortMode==='text-desc'){
+      // テキスト（項目名＋本文）で昇順/降順。日本語はlocaleCompareで自然順
+      const dir = healthSortMode==='text-asc' ? 1 : -1;
+      records.sort((a,b)=>{
+        const ta=`${a.name||''} ${a.body||''}`.trim();
+        const tb=`${b.name||''} ${b.body||''}`.trim();
+        return dir * ta.localeCompare(tb, 'ja');
+      });
+    }else{
+      // 既定: 予定を上に、日付降順
+      records.sort((a,b)=>{
+        const ap=a.status==='scheduled'?0:1, bp=b.status==='scheduled'?0:1;
+        if(ap!==bp) return ap-bp;
+        return (b.date||'').localeCompare(a.date||'');
+      });
+    }
 
     // フィルター状態のボタン見た目更新
     document.getElementById('catFilterBtn').classList.toggle('active', !!(healthCatFilter && healthCatFilter.size<getCategories().length));
     document.getElementById('periodFilterBtn').classList.toggle('active', !!(healthPeriod.from||healthPeriod.to));
+    document.getElementById('sortBtn').classList.toggle('active', healthSortMode!=='date');
     document.getElementById('healthCount').textContent = `${records.length}件`;
 
     const list=document.getElementById('healthList');
@@ -1728,21 +1799,46 @@ const App = (() => {
         </div>
         <div class="item-btn-row" style="align-self:flex-start">
           <button class="habit-hover-del">✕</button>
+          <button class="habit-hover-copy" title="複製して編集">📄</button>
           <button class="habit-hover-edit" title="編集">✏️</button>
           <button class="item-lock${r.locked?' on':''}" title="ロック">${r.locked?'🔒':'🔓'}</button>
         </div>
       `;
       item.addEventListener('click', e=>{
-        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')) return;
+        if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')||e.target.closest('.item-lock')||e.target.closest('.habit-hover-copy')) return;
         openEditHealth(r.id);
       });
       item.querySelector('.item-lock').addEventListener('click',()=>toggleItemLock('healthRecords',r.id));
       item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditHealth(r.id));
+      item.querySelector('.habit-hover-copy').addEventListener('click',()=>copyHealthRecord(r));
       item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('healthRecords',r.id));
       attachSwipe(wrap, del, ()=>softDelete('healthRecords',r.id));
       wrap.appendChild(del); wrap.appendChild(item);
       list.appendChild(wrap);
     });
+  }
+
+  /* ============================================================ 健康記録のコピー（クリップボードへ） ============================================================ */
+  /* ============================================================ 健康記録の複製（同じ内容で新規追加の編集画面を開く） ============================================================
+     コピーボタン押下で、元の記録と同じ内容を入力済みにした「新規追加」モーダルを開く。
+     そのまま編集・保存すると別の記録として追加される（元はそのまま残る）。 */
+  function copyHealthRecord(r){
+    editingHealthId=null;  // 新規追加モード（複製なので別レコードになる）
+    duplicateHealthPersonId=r.personId;  // 複製先の人物は元と同じにする
+    document.getElementById('modalHealthTitle').textContent='🩺 健康記録を複製';
+    // カテゴリ・各値を元の記録から引き継ぐ
+    selectedCat=r.category||'その他';
+    buildHealthCatPills(); onCatChange();
+    document.getElementById('h_name').value=r.name||'';
+    document.getElementById('h_body').value=r.body||'';
+    document.getElementById('h_dose').value=r.dose!=null?r.dose:'';
+    document.getElementById('h_status').value=r.status||'done';
+    // 複製先の人物も元に合わせる
+    if(healthPersonId!=='all') { /* 単一表示中はその人物 */ }
+    setDate('hd', r.date);
+    ['hname','hbody','hdose'].forEach(fieldUpdate);
+    openModal('modalHealth');
+    showToast('複製した内容で編集できます');
   }
 
   /* ============================================================ Excel風フィルター ============================================================ */
@@ -1762,19 +1858,32 @@ const App = (() => {
     closeAllPops();
     const pop=document.getElementById('catFilterPop');
     const checks=document.getElementById('catFilterChecks');
+    // 検索欄をリセット
+    const cs=document.getElementById('catFilterSearch'); if(cs) cs.value='';
     // 現在の選択（null=全選択扱い）
     const selected = healthCatFilter || new Set(getCategories().map(c=>c.key));
     checks.innerHTML='';
     getCategories().forEach(c=>{
-      const lbl=document.createElement('label'); lbl.className='filter-check';
+      const lbl=document.createElement('label'); lbl.className='filter-check'; lbl.dataset.key=c.key;
       lbl.innerHTML=`<input type="checkbox" value="${c.key}" ${selected.has(c.key)?'checked':''}> ${c.icon} ${c.key}`;
       checks.appendChild(lbl);
     });
     positionPop(pop, e.currentTarget);
     pop.classList.add('open');
   }
+  /* カテゴリ絞り込み検索: 該当しないチェック行を隠す */
+  function filterCatChecks(){
+    const q=(document.getElementById('catFilterSearch').value||'').toLowerCase();
+    document.querySelectorAll('#catFilterChecks .filter-check').forEach(lbl=>{
+      const key=(lbl.dataset.key||'').toLowerCase();
+      lbl.style.display = (!q || key.includes(q)) ? '' : 'none';
+    });
+  }
   function catFilterSelectAll(){
-    document.querySelectorAll('#catFilterChecks input').forEach(i=>i.checked=true);
+    // 表示中（検索に一致）のものだけ全選択
+    document.querySelectorAll('#catFilterChecks .filter-check').forEach(lbl=>{
+      if(lbl.style.display!=='none'){ const i=lbl.querySelector('input'); if(i) i.checked=true; }
+    });
   }
   function applyCatFilter(){
     const checked=[...document.querySelectorAll('#catFilterChecks input:checked')].map(i=>i.value);
@@ -1825,7 +1934,40 @@ const App = (() => {
   }
   function resetHealthFilters(){
     healthCatFilter=null; healthPeriod={from:null,to:null};
+    healthSearch=''; healthSortMode='date';
+    const si=document.getElementById('healthSearch'); if(si) si.value='';
+    document.getElementById('healthSearchClear').style.display='none';
+    updateSortLabel();
     renderHealthList();
+  }
+
+  /* ============================================================ 健康記録の検索 ============================================================ */
+  function onHealthSearch(){
+    const el=document.getElementById('healthSearch');
+    healthSearch=(el.value||'').trim();
+    document.getElementById('healthSearchClear').style.display = healthSearch ? '' : 'none';
+    renderHealthList();
+  }
+  function clearHealthSearch(){
+    healthSearch='';
+    const el=document.getElementById('healthSearch'); if(el) el.value='';
+    document.getElementById('healthSearchClear').style.display='none';
+    renderHealthList();
+  }
+
+  /* ============================================================ テキストで並べ替え（日付順→昇順→降順を循環） ============================================================ */
+  function toggleHealthSort(){
+    healthSortMode = healthSortMode==='date' ? 'text-asc'
+                   : healthSortMode==='text-asc' ? 'text-desc'
+                   : 'date';
+    updateSortLabel();
+    renderHealthList();
+  }
+  function updateSortLabel(){
+    const el=document.getElementById('sortLabel'); if(!el) return;
+    el.textContent = healthSortMode==='text-asc' ? '🔤 昇順'
+                   : healthSortMode==='text-desc' ? '🔤 降順'
+                   : '↕ 日付順';
   }
 
   /* ============================================================ 削除（2段階） ============================================================ */
@@ -1895,7 +2037,7 @@ const App = (() => {
     document.getElementById(id).classList.remove('open');
     // 編集状態をリセット（閉じたら新規モードに戻す）
     if(id==='modalGrowth') editingGrowthId=null;
-    if(id==='modalHealth') editingHealthId=null;
+    if(id==='modalHealth'){ editingHealthId=null; duplicateHealthPersonId=null; }
   }
 
   function openAddModal(){
@@ -1910,6 +2052,7 @@ const App = (() => {
     }
     else if(currentTab==='health'){
       editingHealthId=null;  // 新規モード
+      duplicateHealthPersonId=null;  // 通常追加なので複製人物はクリア
       document.getElementById('modalHealthTitle').textContent='🩺 健康記録を追加';
       resetHealthForm(); openModal('modalHealth');
     }
@@ -2108,7 +2251,10 @@ const App = (() => {
       saveData(); renderHealthList(); closeModal('modalHealth'); showToast('更新しました');
     }else{
       // ── 新規追加 ──
-      const personId=healthPersonId!=='all'?healthPersonId:data.persons[0]?.id;
+      // 複製の場合は元の人物、それ以外は選択中人物（全員なら先頭）
+      const personId = duplicateHealthPersonId
+        || (healthPersonId!=='all'?healthPersonId:data.persons[0]?.id);
+      duplicateHealthPersonId=null;  // 使い終わったらクリア
       if(!personId){ showToast('人物を選択してください'); return; }
       const rec={ id:uid(), personId, category:selectedCat, name, body, date, createdAt:new Date().toISOString() };
       if(isVac){ rec.status=status; rec.dose=dose; }
@@ -2578,8 +2724,9 @@ const App = (() => {
     addCategory, removeCategory, resetCategories,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
     connectGas, disconnectGas, updateApp,
-    openCatFilter, applyCatFilter, catFilterSelectAll,
+    openCatFilter, applyCatFilter, catFilterSelectAll, filterCatChecks,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
+    onHealthSearch, clearHealthSearch, toggleHealthSort,
   };
 })();
 
