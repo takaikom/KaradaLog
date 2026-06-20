@@ -8,6 +8,10 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v2.12: 健康カード並び替え・カレンダー修正
+    - 健康カードを1行目=日付／2行目=カテゴリ等／3行目=登録テキスト に変更
+    - 左端のカテゴリアイコン表示を復活
+    - 日付カレンダーボタンをshowPicker()方式に変更し確実に開くよう修正
   v2.11: PWA / APK対応
     - manifest.json・service-worker.js・各種アイコンを追加しPWA化
     - apple-touch-icon等のメタタグ、Service Worker登録を追加
@@ -493,10 +497,11 @@ input,select,textarea{font-size:16px;}
   position:relative;
 }
 .btn-calendar:hover{background:var(--border);border-color:var(--accent);color:var(--accent);}
-/* ネイティブdateを重ねて透明化（クリックでピッカー起動） */
+.btn-calendar:active{transform:scale(.95);}
+/* ネイティブdate inputは非表示（ボタンのshowPickerで起動するため） */
 .btn-calendar input[type=date]{
-  position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;
-  border:none;padding:0;
+  position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;
+  border:none;padding:0;margin:0;left:0;bottom:0;
 }
 
 .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
@@ -693,9 +698,9 @@ input,select,textarea{font-size:16px;}
                 oninput="App.onDateTextInput('pb')" onkeydown="App.dateTextKeyDown(event,'pb')">
               <button class="btn-clear-field" onclick="App.clearDateField('pb')">✕</button>
             </div>
-            <label class="btn-calendar" title="カレンダーから選択">📅
-              <input type="date" id="pb_picker" onchange="App.onDatePickerChange('pb')">
-            </label>
+            <button type="button" class="btn-calendar" title="カレンダーから選択" onclick="App.openPicker('pb')">📅
+              <input type="date" id="pb_picker" onchange="App.onDatePickerChange('pb')" tabindex="-1">
+            </button>
           </div>
         </div>
       </div>
@@ -808,9 +813,9 @@ input,select,textarea{font-size:16px;}
               oninput="App.onDateTextInput('gd')" onkeydown="App.dateTextKeyDown(event,'gd')">
             <button class="btn-clear-field" onclick="App.clearDateField('gd')">✕</button>
           </div>
-          <label class="btn-calendar" title="カレンダーから選択">📅
-            <input type="date" id="gd_picker" onchange="App.onDatePickerChange('gd')">
-          </label>
+          <button type="button" class="btn-calendar" title="カレンダーから選択" onclick="App.openPicker('gd')">📅
+            <input type="date" id="gd_picker" onchange="App.onDatePickerChange('gd')" tabindex="-1">
+          </button>
         </div>
       </div>
     </div>
@@ -898,9 +903,9 @@ input,select,textarea{font-size:16px;}
               oninput="App.onDateTextInput('hd')" onkeydown="App.dateTextKeyDown(event,'hd')">
             <button class="btn-clear-field" onclick="App.clearDateField('hd')">✕</button>
           </div>
-          <label class="btn-calendar" title="カレンダーから選択">📅
-            <input type="date" id="hd_picker" onchange="App.onDatePickerChange('hd')">
-          </label>
+          <button type="button" class="btn-calendar" title="カレンダーから選択" onclick="App.openPicker('hd')">📅
+            <input type="date" id="hd_picker" onchange="App.onDatePickerChange('hd')" tabindex="-1">
+          </button>
         </div>
       </div>
     </div>
@@ -1260,6 +1265,27 @@ const App = (() => {
       if(prefix==='gd'){ document.getElementById('g_height')?.focus(); document.getElementById('g_height')?.select(); }
       else if(prefix==='hd'){ document.getElementById('h_body')?.focus(); }
       else if(prefix==='pb'){ /* 生年月日入力後は追加ボタンへ誘導（フォーカスのみ外す） */ e.target.blur(); }
+    }
+  }
+
+  /* カレンダーボタン押下：ネイティブ日付ピッカーを開く
+     showPicker()対応ブラウザはそれを使い、非対応環境はfocus/clickでフォールバック */
+  function openPicker(prefix){
+    const picker = document.getElementById(prefix+'_picker');
+    if(!picker) return;
+    // テキスト欄に妥当な日付があれば初期表示位置を合わせる
+    const iso = getDateISO(prefix);
+    if(iso) picker.value = iso;
+    try{
+      if(typeof picker.showPicker === 'function'){
+        picker.showPicker();   // モダンブラウザ（Chrome/Edge/Safari16+）
+      }else{
+        picker.focus();
+        picker.click();        // 旧環境フォールバック
+      }
+    }catch(e){
+      // showPickerがユーザー操作要件等で失敗した場合のフォールバック
+      picker.focus(); picker.click();
     }
   }
 
@@ -1669,19 +1695,20 @@ const App = (() => {
             : `<span class="health-status-badge" style="background:var(--green-soft);color:var(--green)">接種済</span>`)
         : '';
       item.innerHTML=`
+        <div class="health-icon" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon}</div>
         <div class="health-info">
           <!-- 1行目: 日付・人物・月齢 -->
           <div class="health-meta">${r.date?formatDateJP(r.date):'日付未設定'}${person && healthPersonId==='all'?` ・ ${escHtml(person.name)}`:''}${ageStr?` ・ ${ageStr}`:''}</div>
-          <!-- 2行目: 登録テキスト（項目名＋本文） -->
+          <!-- 2行目: カテゴリ・状態 -->
+          <div class="health-tag-row">
+            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${r.category}</span>
+            ${statusBadge}
+          </div>
+          <!-- 3行目: 登録テキスト（項目名＋本文） -->
           <div class="health-name-row">
             <span class="health-name">${escHtml(r.name||r.category)}${r.dose?` <span style="font-size:11px;color:var(--text3)">${r.dose}回目</span>`:''}</span>
           </div>
           ${r.body?`<div class="health-body">${escHtml(r.body)}</div>`:''}
-          <!-- 3行目: カテゴリ・状態 -->
-          <div class="health-tag-row">
-            <span class="health-cat" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon} ${r.category}</span>
-            ${statusBadge}
-          </div>
         </div>
         <div class="item-btn-row" style="align-self:flex-start">
           <button class="habit-hover-del">✕</button>
@@ -2507,7 +2534,7 @@ const App = (() => {
     openEditGrowth, openEditHealth,
     softDelete, restoreItem, purgeItem, restoreAll, purgeAll, toggleItemLock,
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
-    onDateTextInput, dateTextKeyDown, onDatePickerChange, clearDateField,
+    onDateTextInput, dateTextKeyDown, onDatePickerChange, openPicker, clearDateField,
     addPerson, removePerson,
     addCategory, removeCategory, resetCategories,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
