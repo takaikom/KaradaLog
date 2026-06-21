@@ -8,6 +8,48 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v13 (旧 v12): GASコードとの整合性確認・対応するGAS送信トースト表示を拡充
+    - GAS側(karada-log-gas.gs v3)でcategories/timeCategories/measureTypesのシートヘッダーに
+      deleted・deletedAtを追加し、growth/healthRecordsのヘッダーにupdatedAt・lockedを追加
+      （対応するGASコードの更新と合わせて実施。詳細は karada-log-gas.gs 側の変更履歴を参照）
+    - GAS送信（push）完了時のトースト表示に時間記録・測定の件数も表示するよう拡充
+  v12 (旧 v11): 初期タブ変更、カテゴリ削除UIを記録一覧と統一、単位の大文字化バグ修正
+    - 初期表示タブを「時間記録」→「健康管理」に変更
+    - 健康管理カテゴリ／記録カテゴリ／測定項目の削除方法を記録一覧と統一:
+      PCでは✕ボタン、モバイルはスワイプ＋🗑ボタン、確認メッセージなしで即ゴミ箱へ
+      （カテゴリ・項目を deleted:true の論理削除に変更し、専用ミニゴミ箱から復元・完全削除が可能）
+    - 各管理セクションに専用ゴミ箱（開閉式）を追加し、復元・完全削除ができるように
+    - 不具合修正: 推移図タイトルが .section-title の text-transform:uppercase の影響で
+      登録した単位の大文字小文字に関わらず常に大文字表示されていた点を修正
+      （measureChartTitle に text-transform:none を指定）
+    - 不具合修正: 既存ユーザーのローカルデータに残っていたデフォルト血圧単位「mmHg」を
+      起動時に自動で「mm Hg」へ一度だけ補正する処理を追加（手動変更済みのものは対象外）
+    - スワイプ削除ボタン表示中は✏️編集ボタン等が重なって誤操作の原因となるため、
+      スワイプ中は編集系ボタンを一時的に無効化するよう attachSwipe を拡張
+  v11 (旧 v10): タブ名称・並び順整理、カテゴリ管理の編集機能統一、時間記録の削除不具合修正
+    - タブ名称変更: 「健康」→「健康管理」/「予定表」→「タイムライン」/「記録」→「時間記録」
+    - タブ表示順を 健康管理／測定／時間記録／タイムライン／設定 に変更
+    - 設定の見出し変更: 「カテゴリ管理」→「健康管理カテゴリ」/「記録カテゴリ管理」→「記録カテゴリ」/
+      「測定項目管理」→「測定項目」
+    - 健康管理カテゴリ・記録カテゴリ・測定項目の3つすべてに✏️編集（モーダル）を追加し、
+      登録済みの項目を編集可能に統一
+    - 並べ替えUIを統一: 行をタップして選択 → リスト上部の共通▲▼ボタンで選択中の項目を移動
+      （健康管理カテゴリにも新規で並べ替えを追加）
+    - 測定項目の単位はそのまま大文字小文字を保持してグラフタイトル・Y軸・一覧に反映されることを確認
+    - デフォルト測定項目「血圧」の単位を mmHg → mm Hg（半角スペースあり）に変更
+    - 不具合修正: 時間記録（timeLogs）の削除がsoftDelete対象に一覧再描画・ゴミ箱を
+      含んでいなかったため、削除しても一覧から消えず、ゴミ箱にも表示されず復元不可だった点を修正
+      （softDelete/restoreItem/restoreAll/purgeAll/renderTrashをtimeLogsにも対応）
+  v3.0: 育児・看護向けに刷新（時間記録・予定表・任意測定値）
+    - 5タブ構成に再編（記録／予定表／測定／健康／設定）
+    - 時間記録: 育児・看護のカテゴリをタップで即時記録、長押しで計測開始→停止
+      日付グループの一覧、編集・削除、進行中のストップウォッチ表示
+    - 予定表: Outlook/番組表風タイムライン。1日／1週間切替、現在時刻ライン、
+      カテゴリ色分けの帯、帯タップで編集
+    - 測定: 身長体重に加え、血圧・血糖値・体温など任意の測定項目の推移グラフと一覧
+      測定項目はタブで切替、血圧は上/下の2値に対応
+    - 設定: 記録カテゴリと測定項目の追加・削除・並べ替え（▲▼）を追加
+    - GAS同期に timeLogs / timeCategories / measures / measureTypes を追加
   v2.16: カテゴリ別の予測入力候補
     - 健康記録の入力で、選択中カテゴリの過去入力を候補表示
     - 項目名は入力候補(datalist)として、本文はタップ入力できるチップとして提示
@@ -261,10 +303,10 @@ input,select,textarea{font-size:16px;}
 }
 .tab-btn{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:2px;padding:6px 4px;font-size:11px;font-weight:700;color:var(--text3);
+  gap:2px;padding:6px 2px;font-size:10px;font-weight:700;color:var(--text3);
   border-bottom:3px solid transparent;transition:color .15s,border-color .15s;
 }
-.tab-btn .tab-icon{font-size:19px;}
+.tab-btn .tab-icon{font-size:17px;}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
 
 /* ============================================================
@@ -296,6 +338,76 @@ input,select,textarea{font-size:16px;}
   font-size:12px;font-weight:800;color:var(--text3);text-transform:uppercase;
   letter-spacing:.08em;margin:4px 2px 10px;display:flex;align-items:center;gap:6px;
 }
+.section-title-sm{font-size:12px;font-weight:700;color:var(--text3);margin:2px 2px 8px;}
+/* 測定項目タブ（横スクロール） */
+.measure-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;-webkit-overflow-scrolling:touch;}
+.measure-tab{
+  flex-shrink:0;padding:6px 14px;border-radius:18px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text3);white-space:nowrap;
+}
+.measure-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* ============================================================ 時間記録 ============================================================ */
+.quick-log-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-bottom:8px;}
+.quick-log-btn{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:12px 6px;border-radius:14px;border:1px solid var(--border);
+  background:var(--surface);box-shadow:var(--shadow);transition:transform .1s,background .12s;
+  position:relative;user-select:none;
+}
+.quick-log-btn:active{transform:scale(.93);}
+.quick-log-btn .qlb-icon{font-size:24px;}
+.quick-log-btn .qlb-label{font-size:11px;font-weight:700;color:var(--text2);text-align:center;line-height:1.2;}
+.quick-log-btn.running{background:var(--accent-soft);border-color:var(--accent);}
+.quick-log-btn.running::after{content:'●';position:absolute;top:5px;right:7px;color:var(--accent);font-size:9px;animation:pulse 1.2s infinite;}
+
+/* 時間記録カード */
+.tlog-day-group{margin-bottom:14px;}
+.tlog-day-head{font-size:12px;font-weight:800;color:var(--text2);margin:0 2px 6px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+.tlog-item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:6px;
+}
+.tlog-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.tlog-body{flex:1;min-width:0;}
+.tlog-cat{font-weight:700;font-size:14px;}
+.tlog-time{font-size:12px;color:var(--text3);font-family:monospace;}
+.tlog-dur{font-size:11px;color:var(--accent);font-weight:700;}
+.tlog-memo{font-size:12px;color:var(--text2);margin-top:2px;word-break:break-word;}
+
+/* ============================================================ スケジュール（予定表） ============================================================ */
+.sched-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;}
+.sched-view-toggle{display:flex;background:var(--surface2);border-radius:10px;padding:2px;}
+.svt-btn{padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;color:var(--text3);}
+.svt-btn.active{background:var(--accent);color:#fff;}
+.sched-nav{display:flex;align-items:center;gap:4px;}
+.sched-nav-btn{width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:18px;font-weight:700;color:var(--text2);}
+.sched-today-btn{padding:0 12px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--accent);}
+.sched-range-label{text-align:center;font-size:14px;font-weight:800;margin-bottom:8px;}
+.sched-scroll{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;background:var(--surface);max-height:calc(100vh - 280px);}
+.sched-grid{position:relative;}
+/* 時間軸の行 */
+.sched-hour-row{display:flex;border-bottom:1px solid var(--border);height:48px;}
+.sched-hour-label{width:42px;flex-shrink:0;font-size:10px;color:var(--text3);text-align:right;padding:2px 5px 0 0;border-right:1px solid var(--border);font-family:monospace;}
+.sched-hour-cols{flex:1;display:flex;position:relative;}
+.sched-col{flex:1;border-right:1px solid var(--border);position:relative;min-width:0;}
+.sched-col:last-child{border-right:none;}
+/* 曜日ヘッダー */
+.sched-dayhead-row{display:flex;position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--border);}
+.sched-dayhead-spacer{width:42px;flex-shrink:0;border-right:1px solid var(--border);}
+.sched-dayhead{flex:1;text-align:center;font-size:11px;font-weight:700;padding:6px 2px;color:var(--text2);min-width:0;border-right:1px solid var(--border);}
+.sched-dayhead:last-child{border-right:none;}
+.sched-dayhead.today{background:var(--accent-soft);color:var(--accent);}
+.sched-dayhead .dh-day{font-size:9px;color:var(--text3);}
+/* イベント帯 */
+.sched-event{
+  position:absolute;left:1px;right:1px;border-radius:5px;padding:2px 4px;overflow:hidden;
+  font-size:10px;font-weight:700;color:#fff;cursor:pointer;z-index:2;line-height:1.15;
+  box-shadow:0 1px 3px rgba(0,0,0,.15);
+}
+.sched-event .se-time{font-size:8px;opacity:.85;font-weight:600;}
+.sched-now-line{position:absolute;left:0;right:0;height:2px;background:var(--red);z-index:4;pointer-events:none;}
+.sched-now-line::before{content:'';position:absolute;left:0;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--red);}
 
 /* ============================================================
    人物タブ（成長・健康共通）
@@ -353,6 +465,11 @@ input,select,textarea{font-size:16px;}
   pointer-events:none;opacity:0;transition:opacity .15s;cursor:pointer;line-height:1.3;
 }
 .habit-swipe-del.visible{opacity:1;pointer-events:auto;}
+/* スワイプで削除ボタンが出ている間は、重なる編集系ボタンを誤操作防止のため無効化 */
+.habit-swipe-wrap.swiping .btn-mini.edit,
+.habit-swipe-wrap.swiping .habit-hover-edit,
+.habit-swipe-wrap.swiping .habit-hover-copy,
+.habit-swipe-wrap.swiping .item-lock{visibility:hidden;}
 .habit-swipe-wrap:hover .habit-hover-del{opacity:1;pointer-events:auto;}
 .habit-hover-del{
   width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);
@@ -614,7 +731,7 @@ input,select,textarea{font-size:16px;}
 
 /* 設定行 */
 .setting-row{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--border);}
-.setting-row:last-child{border-bottom:none;}
+.setting-row:last-child,.habit-swipe-wrap:last-child .setting-row{border-bottom:none;}
 .setting-label{flex:1;font-size:14px;font-weight:700;}
 .setting-desc{font-size:12px;color:var(--text3);margin-top:2px;font-weight:500;}
 
@@ -634,6 +751,38 @@ input,select,textarea{font-size:16px;}
 .btn-mini{font-size:12px;font-weight:700;border-radius:7px;padding:5px 11px;}
 .btn-mini.restore{color:var(--accent);background:var(--accent-soft);}
 .btn-mini.purge{color:var(--red);background:var(--surface);border:1px solid var(--red);}
+
+/* 並べ替えツールバー（カテゴリ・測定項目管理：選択中の行を▲▼で移動） */
+.reorder-toolbar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--radius-sm);
+  padding:8px 10px;margin-bottom:10px;
+}
+.reorder-toolbar .reorder-label{font-size:12px;font-weight:700;color:var(--accent-dark);}
+.reorder-toolbar .btn-mini{color:var(--accent-dark);background:var(--surface);border:1px solid var(--accent);}
+.reorder-toolbar .btn-mini:disabled{opacity:.35;}
+/* 並べ替え対象の選択行 */
+.setting-row.reorder-selectable{cursor:pointer;border-radius:var(--radius-sm);transition:background .12s;}
+.setting-row.reorder-selectable:hover{background:var(--surface2);}
+.setting-row.reorder-selected{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent);}
+.btn-mini.edit{color:var(--text2);background:var(--surface2);}
+
+/* カテゴリ・測定項目 専用ミニゴミ箱（健康管理カテゴリ／記録カテゴリ／測定項目の各セクション内） */
+.mini-trash{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px;}
+.mini-trash-toggle{
+  display:flex;align-items:center;gap:6px;width:100%;
+  background:none;border:none;padding:4px 0;font-size:12px;font-weight:700;color:var(--text3);cursor:pointer;
+}
+.mini-trash-toggle .caret{transition:transform .15s;}
+.mini-trash-toggle.open .caret{transform:rotate(90deg);}
+.mini-trash-body{display:none;margin-top:6px;}
+.mini-trash-body.open{display:block;}
+.mini-trash-row{
+  display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);
+  font-size:12px;color:var(--text3);
+}
+.mini-trash-row:last-child{border-bottom:none;}
+.mini-trash-row .mt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* トースト */
 .toast{
@@ -674,13 +823,19 @@ input,select,textarea{font-size:16px;}
   <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
 </header>
 
-<!-- ============================================================ タブ（3つ） ============================================================ -->
+<!-- ============================================================ タブ（5つ） ============================================================ -->
 <nav class="tabs">
-  <button class="tab-btn active" data-tab="growth" onclick="App.switchTab('growth')">
-    <span class="tab-icon">📏</span>成長
-  </button>
-  <button class="tab-btn" data-tab="health" onclick="App.switchTab('health')">
+  <button class="tab-btn active" data-tab="health" onclick="App.switchTab('health')">
     <span class="tab-icon">🩺</span>健康管理
+  </button>
+  <button class="tab-btn" data-tab="growth" onclick="App.switchTab('growth')">
+    <span class="tab-icon">📈</span>測定
+  </button>
+  <button class="tab-btn" data-tab="timelog" onclick="App.switchTab('timelog')">
+    <span class="tab-icon">⏱️</span>時間記録
+  </button>
+  <button class="tab-btn" data-tab="schedule" onclick="App.switchTab('schedule')">
+    <span class="tab-icon">📅</span>タイムライン
   </button>
   <button class="tab-btn" data-tab="settings" onclick="App.switchTab('settings')">
     <span class="tab-icon">⚙️</span>設定
@@ -690,25 +845,90 @@ input,select,textarea{font-size:16px;}
 <!-- ============================================================ メイン ============================================================ -->
 <main class="main" id="main">
 
-  <!-- === 成長タブ === -->
-  <div class="page active" id="page-growth">
-    <div class="person-tabs" id="growthPersonTabs"></div>
-    <div class="summary-bar" id="growthSummary"></div>
-    <div class="card" id="chartCard">
-      <div class="section-title" style="margin:0 0 10px">📈 成長グラフ</div>
-      <!-- 凡例トグル（ON/OFFチップ式） -->
-      <div class="chart-legend" id="chartLegend"></div>
-      <div class="chart-wrap"><canvas id="chartCanvas"></canvas></div>
+  <!-- === 時間記録タブ === -->
+  <div class="page" id="page-timelog">
+    <div class="person-tabs" id="timelogPersonTabs"></div>
+
+    <!-- 進行中の記録（ストップウォッチ） -->
+    <div class="card" id="activeLogCard" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="activeLogIcon" style="font-size:26px"></div>
+        <div style="flex:1;min-width:0">
+          <div id="activeLogCat" style="font-weight:800;font-size:15px"></div>
+          <div id="activeLogStart" style="font-size:12px;color:var(--text3)"></div>
+        </div>
+        <div id="activeLogTimer" style="font-family:monospace;font-size:24px;font-weight:700;color:var(--accent)">0:00</div>
+        <button class="btn-primary" style="padding:8px 16px" onclick="App.stopActiveLog()">停止</button>
+      </div>
     </div>
-    <div class="section-title" style="margin-top:10px">📋 記録一覧</div>
-    <div class="record-list" id="growthList"></div>
-    <div class="empty-state" id="growthEmpty" style="display:none">
-      <div class="es-icon">📏</div><div class="es-text">記録がありません<br>＋ボタンから追加できます</div>
+
+    <!-- カテゴリ クイック記録ボタン -->
+    <div class="section-title-sm">タップで記録（即時／長押しで計測開始）</div>
+    <div class="quick-log-grid" id="quickLogGrid"></div>
+
+    <!-- 記録一覧（日付グループ） -->
+    <div class="section-title-sm" style="margin-top:16px">最近の記録</div>
+    <div id="timeLogList"></div>
+    <div class="empty-state" id="timeLogEmpty" style="display:none">
+      <div class="es-icon">⏱️</div><div class="es-text">記録がありません</div>
+    </div>
+  </div>
+
+  <!-- === タイムライン（スケジュール）タブ === -->
+  <div class="page" id="page-schedule">
+    <div class="person-tabs" id="schedulePersonTabs"></div>
+    <div class="sched-toolbar">
+      <div class="sched-view-toggle">
+        <button class="svt-btn active" id="svtDay" onclick="App.setScheduleView('day')">1日</button>
+        <button class="svt-btn" id="svtWeek" onclick="App.setScheduleView('week')">1週間</button>
+      </div>
+      <div class="sched-nav">
+        <button class="sched-nav-btn" onclick="App.scheduleNav(-1)">‹</button>
+        <button class="sched-today-btn" onclick="App.scheduleToday()">今日</button>
+        <button class="sched-nav-btn" onclick="App.scheduleNav(1)">›</button>
+      </div>
+    </div>
+    <div class="sched-range-label" id="schedRangeLabel"></div>
+    <div class="sched-scroll" id="schedScroll">
+      <div class="sched-grid" id="schedGrid"></div>
+    </div>
+  </div>
+
+  <!-- === 測定タブ === -->
+  <div class="page" id="page-growth">
+    <div class="person-tabs" id="growthPersonTabs"></div>
+    <!-- 測定項目セレクタ（成長＝身長体重等＋血圧血糖などの任意項目） -->
+    <div class="measure-tabs" id="measureTabs"></div>
+    <!-- 成長指標ビュー（身長・体重・BMI・胸囲・頭囲） -->
+    <div id="growthView">
+      <div class="summary-bar" id="growthSummary"></div>
+      <div class="card" id="chartCard">
+        <div class="section-title" style="margin:0 0 10px">📈 成長グラフ</div>
+        <div class="chart-legend" id="chartLegend"></div>
+        <div class="chart-wrap"><canvas id="chartCanvas"></canvas></div>
+      </div>
+      <div class="section-title" style="margin-top:10px">📋 記録一覧</div>
+      <div class="record-list" id="growthList"></div>
+      <div class="empty-state" id="growthEmpty" style="display:none">
+        <div class="es-icon">📏</div><div class="es-text">記録がありません<br>＋ボタンから追加できます</div>
+      </div>
+    </div>
+    <!-- 測定値ビュー（血圧・血糖値など） -->
+    <div id="measureView" style="display:none">
+      <div class="card">
+        <div class="section-title" style="margin:0 0 10px;text-transform:none" id="measureChartTitle">📈 推移</div>
+        <div class="chart-wrap"><canvas id="measureChartCanvas"></canvas></div>
+      </div>
+      <div class="section-title" style="margin-top:10px">📋 記録一覧</div>
+      <div class="record-list" id="measureList"></div>
+      <div class="empty-state" id="measureEmpty" style="display:none">
+        <div class="es-icon">📊</div><div class="es-text">記録がありません<br>＋ボタンから追加できます</div>
+      </div>
     </div>
   </div>
 
   <!-- === 健康管理タブ（ワクチン統合） === -->
-  <div class="page" id="page-health">
+  <div class="page active" id="page-health">
     <div class="person-tabs" id="healthPersonTabs"></div>
     <!-- 検索ボックス -->
     <div class="search-bar">
@@ -773,11 +993,23 @@ input,select,textarea{font-size:16px;}
       </div>
     </div>
 
-    <!-- カテゴリ管理（健康管理タブで使うカテゴリの追加/削除） -->
-    <div class="section-title">🏷 カテゴリ管理</div>
+    <!-- 健康管理カテゴリ（健康管理タブで使うカテゴリの追加/削除/編集/並べ替え） -->
+    <div class="section-title">🏷 健康管理カテゴリ</div>
     <div class="settings-card">
-      <div class="setting-desc" style="margin-bottom:10px">健康管理で使うカテゴリを追加・削除できます。</div>
+      <div class="setting-desc" style="margin-bottom:10px">健康管理で使うカテゴリを追加・編集・削除・並べ替えできます。</div>
+      <div class="reorder-toolbar" id="catReorderToolbar" style="display:none">
+        <span class="reorder-label">選択中のカテゴリを移動：</span>
+        <button class="btn-mini" id="catMoveUpBtn" onclick="App.moveCategorySelected(-1)">▲ 上へ</button>
+        <button class="btn-mini" id="catMoveDownBtn" onclick="App.moveCategorySelected(1)">▼ 下へ</button>
+      </div>
       <div id="categoryList"></div>
+      <!-- カテゴリ専用ミニゴミ箱 -->
+      <div class="mini-trash">
+        <button type="button" class="mini-trash-toggle" id="catTrashToggle" onclick="App.toggleMiniTrash('cat')">
+          <span class="caret">▶</span><span id="catTrashLabel">🗑 ゴミ箱（0）</span>
+        </button>
+        <div class="mini-trash-body" id="catTrashBody"></div>
+      </div>
       <div class="form-row" style="margin:12px 0 0;align-items:flex-end">
         <div class="form-field" style="flex:0 0 56px">
           <label>絵文字</label>
@@ -800,6 +1032,89 @@ input,select,textarea{font-size:16px;}
       <div class="form-actions">
         <button class="btn-secondary" onclick="App.resetCategories()" style="margin-right:auto">初期に戻す</button>
         <button class="btn-primary" onclick="App.addCategory()">＋ カテゴリを追加</button>
+      </div>
+    </div>
+
+    <!-- 記録カテゴリ -->
+    <div class="section-title">⏱️ 記録カテゴリ</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">時間記録タブのカテゴリを追加・編集・削除・並べ替えできます。</div>
+      <div class="reorder-toolbar" id="timeCatReorderToolbar" style="display:none">
+        <span class="reorder-label">選択中のカテゴリを移動：</span>
+        <button class="btn-mini" id="timeCatMoveUpBtn" onclick="App.moveTimeCategorySelected(-1)">▲ 上へ</button>
+        <button class="btn-mini" id="timeCatMoveDownBtn" onclick="App.moveTimeCategorySelected(1)">▼ 下へ</button>
+      </div>
+      <div id="timeCategoryList"></div>
+      <!-- 記録カテゴリ専用ミニゴミ箱 -->
+      <div class="mini-trash">
+        <button type="button" class="mini-trash-toggle" id="timeCatTrashToggle" onclick="App.toggleMiniTrash('timeCat')">
+          <span class="caret">▶</span><span id="timeCatTrashLabel">🗑 ゴミ箱（0）</span>
+        </button>
+        <div class="mini-trash-body" id="timeCatTrashBody"></div>
+      </div>
+      <div class="form-row" style="margin:12px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:0 0 56px">
+          <label>絵文字</label>
+          <input type="text" class="form-input" id="newTimeCatIcon" maxlength="2" placeholder="⏱️" style="text-align:center;font-size:18px;padding:8px 4px">
+        </div>
+        <div class="form-field" style="flex:1.3">
+          <label>カテゴリ名</label>
+          <input type="text" class="form-input" id="newTimeCatName" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: 授乳">
+        </div>
+        <div class="form-field" style="flex:0 0 80px">
+          <label>色</label>
+          <select class="form-input" id="newTimeCatColor" style="padding:8px 6px"></select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="App.resetTimeCategories()" style="margin-right:auto">初期に戻す</button>
+        <button class="btn-primary" onclick="App.addTimeCategory()">＋ 追加</button>
+      </div>
+    </div>
+
+    <!-- 測定項目 -->
+    <div class="section-title">📊 測定項目</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">血圧・血糖値など、測定タブで使う項目を追加・編集・削除・並べ替えできます。</div>
+      <div class="reorder-toolbar" id="measureReorderToolbar" style="display:none">
+        <span class="reorder-label">選択中の項目を移動：</span>
+        <button class="btn-mini" id="measureMoveUpBtn" onclick="App.moveMeasureTypeSelected(-1)">▲ 上へ</button>
+        <button class="btn-mini" id="measureMoveDownBtn" onclick="App.moveMeasureTypeSelected(1)">▼ 下へ</button>
+      </div>
+      <div id="measureTypeList"></div>
+      <!-- 測定項目専用ミニゴミ箱 -->
+      <div class="mini-trash">
+        <button type="button" class="mini-trash-toggle" id="measureTrashToggle" onclick="App.toggleMiniTrash('measure')">
+          <span class="caret">▶</span><span id="measureTrashLabel">🗑 ゴミ箱（0）</span>
+        </button>
+        <div class="mini-trash-body" id="measureTrashBody"></div>
+      </div>
+      <div class="form-row" style="margin:12px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:1.3">
+          <label>項目名</label>
+          <input type="text" class="form-input" id="newMeasureLabel" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: 血糖値">
+        </div>
+        <div class="form-field" style="flex:0 0 70px">
+          <label>単位</label>
+          <input type="text" class="form-input" id="newMeasureUnit" placeholder="mg/dL" style="font-size:13px">
+        </div>
+      </div>
+      <div class="form-row" style="margin:8px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:0 0 80px">
+          <label>色</label>
+          <select class="form-input" id="newMeasureColor" style="padding:8px 6px"></select>
+        </div>
+        <div class="form-field" style="flex:1">
+          <label>値の数</label>
+          <select class="form-input" id="newMeasureFields" style="padding:8px 6px">
+            <option value="1">1つ（体温・血糖値など）</option>
+            <option value="2">2つ（血圧：上/下）</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="App.resetMeasureTypes()" style="margin-right:auto">初期に戻す</button>
+        <button class="btn-primary" onclick="App.addMeasureType()">＋ 追加</button>
       </div>
     </div>
 
@@ -869,6 +1184,111 @@ input,select,textarea{font-size:16px;}
 <button class="fab" id="fab" onclick="App.openAddModal()">＋</button>
 
 <!-- ============================================================ 成長記録モーダル ============================================================ -->
+<!-- 時間記録モーダル -->
+<!-- 測定値モーダル -->
+<div class="modal-overlay" id="modalMeasure">
+  <div class="modal-sheet">
+    <div class="modal-title"><span id="modalMeasureTitle">📊 測定値を追加</span><button class="modal-close" onclick="App.closeModal('modalMeasure')">✕</button></div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>対象の人物</label>
+        <select class="form-input" id="ms_person"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>測定項目</label>
+        <select class="form-input" id="ms_type" onchange="App.onMeasureTypeChange()"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label id="ms_value_label">値</label>
+        <div class="form-input-wrap" id="wrap_msvalue">
+          <input type="number" inputmode="decimal" class="form-input" id="ms_value" step="any" onfocus="this.select()" oninput="App.fieldUpdate('msvalue')">
+          <button class="btn-clear-field" onclick="App.clearField('ms_value','msvalue')">✕</button>
+        </div>
+      </div>
+      <div class="form-field" style="flex:1;display:none" id="ms_value2_field">
+        <label id="ms_value2_label">値2</label>
+        <div class="form-input-wrap" id="wrap_msvalue2">
+          <input type="number" inputmode="decimal" class="form-input" id="ms_value2" step="any" onfocus="this.select()" oninput="App.fieldUpdate('msvalue2')">
+          <button class="btn-clear-field" onclick="App.clearField('ms_value2','msvalue2')">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>日付</label>
+        <div class="date-input-row" id="measureDateRow">
+          <div class="date-input-wrap" id="wrap_msd">
+            <input type="text" class="form-input" id="msd_text" inputmode="numeric" maxlength="10" placeholder="YYYY/MM/DD"
+              oninput="App.onDateTextInput('msd')" onkeydown="App.dateTextKeyDown(event,'msd')">
+            <button class="btn-clear-field" onclick="App.clearDateField('msd')">✕</button>
+          </div>
+          <button type="button" class="btn-calendar" title="カレンダーから選択" onclick="App.openPicker('msd')">📅
+            <input type="date" id="msd_picker" onchange="App.onDatePickerChange('msd')" tabindex="-1">
+          </button>
+        </div>
+      </div>
+      <div class="form-field" style="flex:0 0 90px">
+        <label>時刻（任意）</label>
+        <input type="time" class="form-input" id="ms_time">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>メモ（任意）</label>
+        <input type="text" class="form-input" id="ms_memo" inputmode="text" lang="ja" autocapitalize="off" placeholder="食前・食後・服薬後など">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" onclick="App.saveMeasure()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalTimeLog">
+  <div class="modal-sheet">
+    <div class="modal-title"><span id="modalTimeLogTitle">⏱️ 記録を追加</span><button class="modal-close" onclick="App.closeModal('modalTimeLog')">✕</button></div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>対象の人物</label>
+        <select class="form-input" id="tl_person"></select>
+      </div>
+    </div>
+    <div class="form-field" style="margin-bottom:12px">
+      <label>カテゴリ</label>
+      <div class="cat-pills" id="tl_cat_pills"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1.4">
+        <label>日付</label>
+        <input type="text" class="form-input" id="tl_date" inputmode="numeric" placeholder="YYYY/MM/DD">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>開始時刻</label>
+        <input type="time" class="form-input" id="tl_start">
+      </div>
+      <div class="form-field" style="flex:1">
+        <label>終了時刻（任意）</label>
+        <input type="time" class="form-input" id="tl_end">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1">
+        <label>メモ（任意）</label>
+        <input type="text" class="form-input" id="tl_memo" inputmode="text" lang="ja" autocapitalize="off" placeholder="量・様子など">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" onclick="App.saveTimeLog()">保存</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalGrowth">
   <div class="modal-sheet">
     <div class="modal-title"><span id="modalGrowthTitle">📏 成長記録を追加</span><button class="modal-close" onclick="App.closeModal('modalGrowth')">✕</button></div>
@@ -1025,6 +1445,95 @@ input,select,textarea{font-size:16px;}
   </div>
 </div>
 
+<!-- ============================================================ 健康管理カテゴリ編集モーダル ============================================================ -->
+<div class="modal-overlay" id="modalCatEdit">
+  <div class="modal-sheet">
+    <div class="modal-title">🏷 カテゴリを編集<button class="modal-close" onclick="App.closeModal('modalCatEdit')">✕</button></div>
+    <div class="form-row" style="align-items:flex-end">
+      <div class="form-field" style="flex:0 0 56px">
+        <label>絵文字</label>
+        <input type="text" class="form-input" id="ce_icon" maxlength="2" placeholder="🏷"
+          style="text-align:center;font-size:18px;padding:8px 4px">
+      </div>
+      <div class="form-field" style="flex:1.3">
+        <label>カテゴリ名</label>
+        <div class="form-input-wrap" id="wrap_cename">
+          <input type="text" class="form-input" id="ce_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="カテゴリ名を入力"
+            oninput="App.fieldUpdate('cename')">
+          <button class="btn-clear-field" onclick="App.clearField('ce_name','cename')">✕</button>
+        </div>
+      </div>
+      <div class="form-field" style="flex:0 0 80px">
+        <label>色</label>
+        <select class="form-input" id="ce_color" style="padding:8px 6px"></select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalCatEdit')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveCategoryEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ 記録カテゴリ編集モーダル ============================================================ -->
+<div class="modal-overlay" id="modalTimeCatEdit">
+  <div class="modal-sheet">
+    <div class="modal-title">⏱️ 記録カテゴリを編集<button class="modal-close" onclick="App.closeModal('modalTimeCatEdit')">✕</button></div>
+    <div class="form-row" style="align-items:flex-end">
+      <div class="form-field" style="flex:0 0 56px">
+        <label>絵文字</label>
+        <input type="text" class="form-input" id="tce_icon" maxlength="2" placeholder="⏱️" style="text-align:center;font-size:18px;padding:8px 4px">
+      </div>
+      <div class="form-field" style="flex:1.3">
+        <label>カテゴリ名</label>
+        <input type="text" class="form-input" id="tce_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: 授乳">
+      </div>
+      <div class="form-field" style="flex:0 0 80px">
+        <label>色</label>
+        <select class="form-input" id="tce_color" style="padding:8px 6px"></select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalTimeCatEdit')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveTimeCategoryEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ 測定項目編集モーダル ============================================================ -->
+<div class="modal-overlay" id="modalMeasureTypeEdit">
+  <div class="modal-sheet">
+    <div class="modal-title">📊 測定項目を編集<button class="modal-close" onclick="App.closeModal('modalMeasureTypeEdit')">✕</button></div>
+    <div class="form-row">
+      <div class="form-field" style="flex:1.3">
+        <label>項目名</label>
+        <input type="text" class="form-input" id="mte_label" inputmode="text" lang="ja" autocapitalize="off" placeholder="例: 血糖値">
+      </div>
+      <div class="form-field" style="flex:0 0 70px">
+        <label>単位</label>
+        <input type="text" class="form-input" id="mte_unit" placeholder="mg/dL" style="font-size:13px">
+      </div>
+    </div>
+    <div class="form-row" style="align-items:flex-end">
+      <div class="form-field" style="flex:0 0 80px">
+        <label>色</label>
+        <select class="form-input" id="mte_color" style="padding:8px 6px"></select>
+      </div>
+      <div class="form-field" style="flex:1">
+        <label>値の数</label>
+        <select class="form-input" id="mte_fields" style="padding:8px 6px">
+          <option value="1">1つ（体温・血糖値など）</option>
+          <option value="2">2つ（血圧：上/下）</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeModal('modalMeasureTypeEdit')">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveMeasureTypeEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================ インポート対象選択モーダル ============================================================ -->
 <div class="modal-overlay" id="modalImport">
   <div class="modal-sheet">
@@ -1083,11 +1592,15 @@ const App = (() => {
     growth: [],
     healthRecords: [],
     categories: [],   // 健康カテゴリ（空ならDEFAULT_CATEGORIESを使用）
+    timeLogs: [],     // 時間記録 {id,personId,categoryKey,start,end,memo,deleted,...}
+    timeCategories: [], // 時間記録カテゴリ（空ならDEFAULT_TIME_CATEGORIES）
+    measureTypes: [], // 任意の測定項目 {key,label,unit,color,...}
+    measures: [],     // 測定値 {id,personId,typeKey,date,value,value2,memo,deleted,...}
     settings: { gasUrl:'', gasConnected:false, darkMode:false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
   };
 
   /* ── UI状態 ── */
-  let currentTab = 'growth';
+  let currentTab = 'health';
   let currentPersonId = null;       // 成長タブの選択人物
   let healthPersonId = 'all';       // 健康タブの選択人物
   let chart = null;
@@ -1117,11 +1630,54 @@ const App = (() => {
     { key:'言い間違い', icon:'💬', color:'pink' },
     { key:'その他',     icon:'📌', color:'text3' },
   ];
-  /* 実際に使うカテゴリ配列（data.categoriesを参照） */
-  const getCategories = () => data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES;
-  const catMeta = k => getCategories().find(c => c.key === k) || { key:k||'その他', icon:'📌', color:'text3' };
+  /* 実際に使うカテゴリ配列（data.categoriesを参照、削除済み(deleted:true)は除外） */
+  const getCategoriesAll = () => data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES;
+  const getCategories = () => getCategoriesAll().filter(c=>!c.deleted);
+  const getDeletedCategories = () => getCategoriesAll().filter(c=>c.deleted);
+  const catMeta = k => getCategories().find(c => c.key === k) || getCategoriesAll().find(c=>c.key===k) || { key:k||'その他', icon:'📌', color:'text3' };
   /* カテゴリ選択に使える色パレット（追加時に選ぶ） */
   const CAT_COLORS = ['teal','accent','red','purple','orange','green','pink','text3'];
+
+  /* ============================================================ 時間記録カテゴリ ============================================================
+     育児・看護の両方をデフォルトで用意。設定で編集・並べ替え可能。 */
+  const DEFAULT_TIME_CATEGORIES = [
+    // 育児
+    { key:'授乳',       icon:'🍼', color:'accent' },
+    { key:'ミルク',     icon:'🥛', color:'teal' },
+    { key:'おむつ',     icon:'🧷', color:'orange' },
+    { key:'睡眠',       icon:'😴', color:'purple' },
+    { key:'沐浴',       icon:'🛁', color:'teal' },
+    { key:'離乳食',     icon:'🍚', color:'green' },
+    // 看護
+    { key:'食事',       icon:'🍽️', color:'green' },
+    { key:'排泄',       icon:'🚻', color:'orange' },
+    { key:'服薬',       icon:'💊', color:'purple' },
+    { key:'バイタル測定', icon:'🌡️', color:'red' },
+    { key:'体位変換',   icon:'🔄', color:'pink' },
+    { key:'入浴・清拭', icon:'🧼', color:'teal' },
+    { key:'リハビリ',   icon:'🏃', color:'accent' },
+    { key:'その他',     icon:'📌', color:'text3' },
+  ];
+  const getTimeCategoriesAll = () => data.timeCategories && data.timeCategories.length ? data.timeCategories : DEFAULT_TIME_CATEGORIES;
+  const getTimeCategories = () => getTimeCategoriesAll().filter(c=>!c.deleted);
+  const getDeletedTimeCategories = () => getTimeCategoriesAll().filter(c=>c.deleted);
+  const timeCatMeta = k => getTimeCategories().find(c=>c.key===k) || getTimeCategoriesAll().find(c=>c.key===k) || { key:k||'その他', icon:'📌', color:'text3' };
+
+  /* ============================================================ 測定項目（任意の数値の推移） ============================================================
+     血圧・血糖値・体温など。設定で追加・編集・削除可。
+     fields: 1つの値か2つの値か（血圧は収縮/拡張の2値）。 */
+  const DEFAULT_MEASURE_TYPES = [
+    { key:'temp',     label:'体温',   unit:'℃',    color:'red',    fields:1, low:35, high:42 },
+    { key:'bp',       label:'血圧',   unit:'mm Hg', color:'accent', fields:2, low:40, high:200 },
+    { key:'pulse',    label:'脈拍',   unit:'bpm',  color:'orange', fields:1, low:30, high:200 },
+    { key:'spo2',     label:'SpO2',   unit:'%',    color:'teal',   fields:1, low:70, high:100 },
+    { key:'glucose',  label:'血糖値', unit:'mg/dL',color:'purple', fields:1, low:20, high:500 },
+    { key:'weight2',  label:'体重',   unit:'kg',   color:'green',  fields:1, low:0,  high:200 },
+  ];
+  const getMeasureTypesAll = () => data.measureTypes && data.measureTypes.length ? data.measureTypes : DEFAULT_MEASURE_TYPES;
+  const getMeasureTypes = () => getMeasureTypesAll().filter(t=>!t.deleted);
+  const getDeletedMeasureTypes = () => getMeasureTypesAll().filter(t=>t.deleted);
+  const measureTypeMeta = k => getMeasureTypes().find(t=>t.key===k) || getMeasureTypesAll().find(t=>t.key===k) || { key:k, label:k, unit:'', color:'text3', fields:1 };
 
   /* ============================================================ 初期化 ============================================================ */
   function init(){
@@ -1130,12 +1686,18 @@ const App = (() => {
     buildDateSelects();           // 各日付セレクトを構築
     buildHealthCatPills();        // モーダルのカテゴリピル
     renderPersonTabs();
+    renderMeasureTabs();          // 測定項目タブ
     renderGrowthList();
     renderHealthList();
+    renderQuickLogGrid();         // 時間記録クイックボタン
+    renderTimeLogList();          // 時間記録一覧
+    updateActiveLogCard();        // 進行中の記録
     renderTrash();
     renderPersonList();
     initCatColorSelect();         // カテゴリ色プルダウン
     renderCategoryList();         // カテゴリ一覧
+    initTimeCatColorSelect(); renderTimeCategoryList();   // 時間カテゴリ管理
+    initMeasureColorSelect(); renderMeasureTypeList();    // 測定項目管理
     document.getElementById('gasUrl').value = data.settings.gasUrl || '';
     fieldUpdate('gas');
     renderGasStatus();            // GAS接続状態の表示
@@ -1187,12 +1749,16 @@ const App = (() => {
     const delPersons = keepDeleted(data.persons);
     const delGrowth  = keepDeleted(data.growth);
     const delHealth  = keepDeleted(data.healthRecords);
+    const delTimeLogs= keepDeleted(data.timeLogs);
+    const delMeasures= keepDeleted(data.measures);
 
     // リモートデータで完全上書き（リモートが無い場合は空に）
     const remoteActive = arr => (Array.isArray(arr)?arr:[]).filter(r=>!r.deleted);
     data.persons       = remoteActive(remote.persons);
     data.growth        = remoteActive(remote.growth);
     data.healthRecords = remoteActive(remote.healthRecords);
+    if(remote.timeLogs!==undefined) data.timeLogs = remoteActive(remote.timeLogs);
+    if(remote.measures!==undefined) data.measures = remoteActive(remote.measures);
 
     // ローカルの削除済みを戻す（同一IDがリモート側にも来ていたらローカル削除を優先＝重複排除）
     const reattach = (active, deleted, idKey) => {
@@ -1203,11 +1769,13 @@ const App = (() => {
     data.persons       = reattach(data.persons, delPersons, 'id');
     data.growth        = reattach(data.growth,  delGrowth,  'id');
     data.healthRecords = reattach(data.healthRecords, delHealth, 'id');
+    data.timeLogs      = reattach(data.timeLogs||[], delTimeLogs, 'id');
+    data.measures      = reattach(data.measures||[], delMeasures, 'id');
 
-    // カテゴリはkey単位で完全上書き（リモートが空なら現状維持）
-    if(remote.categories && remote.categories.length){
-      data.categories = remote.categories.slice();
-    }
+    // カテゴリ・時間カテゴリ・測定項目はkey単位で完全上書き（リモートが空なら現状維持）
+    if(remote.categories && remote.categories.length){ data.categories = remote.categories.slice(); }
+    if(remote.timeCategories && remote.timeCategories.length){ data.timeCategories = remote.timeCategories.slice(); }
+    if(remote.measureTypes && remote.measureTypes.length){ data.measureTypes = remote.measureTypes.slice(); }
     normalizeData();  // 型を整える（dateを文字列化、数値を数値化）
   }
 
@@ -1241,6 +1809,18 @@ const App = (() => {
       if(r.deleted==='true') r.deleted=true; if(r.deleted==='false'||r.deleted===''||r.deleted==null) r.deleted=r.deleted===true;
     });
     (data.persons||[]).forEach(p=>{ if(p.birthDate) p.birthDate=toISO(p.birthDate); });
+    (data.measures||[]).forEach(m=>{
+      m.date=toISO(m.date); m.value=num(m.value); m.value2=num(m.value2);
+      if(m.deleted==='true') m.deleted=true; if(m.deleted==='false'||m.deleted===''||m.deleted==null) m.deleted=m.deleted===true;
+    });
+    (data.timeLogs||[]).forEach(l=>{
+      if(l.deleted==='true') l.deleted=true; if(l.deleted==='false'||l.deleted===''||l.deleted==null) l.deleted=l.deleted===true;
+    });
+    // 旧バージョンで保存された血圧のデフォルト単位「mmHg」を「mm Hg」へ一度だけ補正
+    // （ユーザーが手動で別の単位文字列に変更済みの場合は対象外）
+    (data.measureTypes||[]).forEach(t=>{
+      if(t.key==='bp' && t.unit==='mmHg') t.unit='mm Hg';
+    });
   }
 
   function loadData(){
@@ -1253,11 +1833,18 @@ const App = (() => {
         data.healthRecords = p.healthRecords || [];
         // カテゴリ：保存があればそれを、無ければデフォルトで初期化
         data.categories = (p.categories && p.categories.length) ? p.categories : DEFAULT_CATEGORIES.map(c=>({...c}));
+        // 時間記録・測定（新機能）
+        data.timeLogs = p.timeLogs || [];
+        data.timeCategories = (p.timeCategories && p.timeCategories.length) ? p.timeCategories : DEFAULT_TIME_CATEGORIES.map(c=>({...c}));
+        data.measureTypes = (p.measureTypes && p.measureTypes.length) ? p.measureTypes : DEFAULT_MEASURE_TYPES.map(t=>({...t}));
+        data.measures = p.measures || [];
         data.settings = Object.assign(data.settings, p.settings || {});
         if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
       } else {
-        // 初回起動：デフォルトカテゴリをセット
+        // 初回起動：デフォルトをセット
         data.categories = DEFAULT_CATEGORIES.map(c=>({...c}));
+        data.timeCategories = DEFAULT_TIME_CATEGORIES.map(c=>({...c}));
+        data.measureTypes = DEFAULT_MEASURE_TYPES.map(t=>({...t}));
       }
       normalizeData();  // 読み込み後に型を整える
     }catch(e){ console.error(e); }
@@ -1304,10 +1891,12 @@ const App = (() => {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-'+tab).classList.add('active');
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    // FAB: 設定タブでは隠す
-    document.getElementById('fab').classList.toggle('hidden', tab === 'settings');
+    // FAB: 設定・予定表タブでは隠す（予定表は記録追加の起点ではないため）
+    document.getElementById('fab').classList.toggle('hidden', tab === 'settings' || tab === 'schedule');
     requestAnimationFrame(() => { document.getElementById('main').scrollTop = scrollPositions[tab] || 0; });
-    if(tab === 'growth') renderChart();
+    if(tab === 'growth'){ renderMeasureTabs(); renderMeasureView(); }
+    if(tab === 'timelog'){ renderTimeLogList(); renderQuickLogGrid(); updateActiveLogCard(); }
+    if(tab === 'schedule') renderSchedule();
   }
 
   /* ============================================================ 日付入力（単一欄：テンキー＋スラッシュ自動区切り／カレンダー併用） ============================================================
@@ -1319,6 +1908,7 @@ const App = (() => {
     const today = new Date().toISOString().slice(0,10);
     setDate('gd', today);
     setDate('hd', today);
+    setDate('msd', today);
     // pb（生年月日）は空のまま
   }
 
@@ -1471,7 +2061,8 @@ const App = (() => {
       allBtn.textContent='全員';
       allBtn.addEventListener('click', ()=>{
         currentPersonId='all';
-        renderPersonTabs(); renderGrowthList();
+        renderPersonTabs();
+        if(selectedMeasureKey==='growth') renderGrowthList(); else renderMeasureView();
       });
       gEl.appendChild(allBtn);
       data.persons.forEach(p=>{
@@ -1483,7 +2074,7 @@ const App = (() => {
         btn.addEventListener('click', ()=>{
           currentPersonId = p.id;
           renderPersonTabs();
-          renderGrowthList();
+          if(selectedMeasureKey==='growth') renderGrowthList(); else renderMeasureView();
         });
         gEl.appendChild(btn);
       });
@@ -1506,6 +2097,8 @@ const App = (() => {
         hEl.appendChild(btn);
       });
     }
+    // 時間記録・スケジュールの人物タブも同期
+    if(typeof renderTimelogPersonTabs==='function') renderTimelogPersonTabs();
   }
 
   /* ある人物の最新成長記録日 */
@@ -1989,29 +2582,31 @@ const App = (() => {
                    : '↕ 日付順';
   }
 
-  /* ============================================================ 削除（2段階） ============================================================ */
+  /* ============================================================ 削除（2段階） ============================================================
+     対象タイプ: growth / healthRecords / timeLogs（measuresは別グラフ系統のため対象外） */
+  const TRASH_TYPES = ['growth','healthRecords','timeLogs'];
   function softDelete(type,id){
     const rec=data[type].find(r=>r.id===id); if(!rec) return;
     if(rec.locked){ showToast('🔒 ロック中の項目は削除できません'); return; }
     rec.deleted=true; rec.deletedAt=new Date().toISOString();
-    saveData(); renderGrowthList(); renderHealthList(); renderTrash();
+    saveData(); renderGrowthList(); renderHealthList(); renderTimeLogList(); renderTrash();
     showToast('削除しました（設定→ゴミ箱から復元可）');
   }
   function restoreItem(type,id){
     const rec=data[type].find(r=>r.id===id); if(!rec) return;
     delete rec.deleted; delete rec.deletedAt;
-    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('復元しました');
+    saveData(); renderGrowthList(); renderHealthList(); renderTimeLogList(); renderTrash(); showToast('復元しました');
   }
   function purgeItem(type,id){
     data[type]=data[type].filter(r=>r.id!==id); saveData(); renderTrash(); showToast('完全に削除しました');
   }
   function restoreAll(){
-    ['growth','healthRecords'].forEach(t=>data[t].forEach(r=>{if(r.deleted){delete r.deleted;delete r.deletedAt;}}));
-    saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全て復元しました');
+    TRASH_TYPES.forEach(t=>data[t].forEach(r=>{if(r.deleted){delete r.deleted;delete r.deletedAt;}}));
+    saveData(); renderGrowthList(); renderHealthList(); renderTimeLogList(); renderTrash(); showToast('全て復元しました');
   }
   function purgeAll(){
     if(!confirm('ゴミ箱を空にします。元に戻せません。')) return;
-    ['growth','healthRecords'].forEach(t=>data[t]=data[t].filter(r=>!r.deleted));
+    TRASH_TYPES.forEach(t=>data[t]=data[t].filter(r=>!r.deleted));
     saveData(); renderTrash(); showToast('完全削除しました');
   }
 
@@ -2019,6 +2614,7 @@ const App = (() => {
     const all=[
       ...data.growth.filter(r=>r.deleted).map(r=>({...r,_type:'growth',_label:'成長'})),
       ...data.healthRecords.filter(r=>r.deleted).map(r=>({...r,_type:'healthRecords',_label:'健康'})),
+      ...data.timeLogs.filter(r=>r.deleted).map(r=>({...r,_type:'timeLogs',_label:'時間記録'})),
     ].sort((a,b)=>(b.deletedAt||'').localeCompare(a.deletedAt||''));
     const list=document.getElementById('trashList');
     const empty=document.getElementById('trashEmpty');
@@ -2030,11 +2626,14 @@ const App = (() => {
       const person=data.persons.find(p=>p.id===r.personId);
       const desc=r._type==='growth'
         ? `身長:${r.height??'-'} 体重:${r.weight??'-'}`
+        : r._type==='timeLogs'
+        ? `${timeCatMeta(r.categoryKey).key}${r.memo?'：'+r.memo:''}`.slice(0,40)
         : `${r.category}: ${r.name||r.body||''}`.slice(0,40);
+      const dateStr = r._type==='timeLogs' ? (r.start?formatDateJP(String(r.start).slice(0,10)):'') : (r.date||'');
       const item=document.createElement('div'); item.className='record-item deleted';
       item.innerHTML=`
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--text3)">${r._label} ${r.date||''} ${person?'・'+escHtml(person.name):''}</div>
+          <div style="font-size:11px;color:var(--text3)">${r._label} ${dateStr} ${person?'・'+escHtml(person.name):''}</div>
           <div style="font-size:13px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(desc)}</div>
         </div>
         <button class="btn-mini restore">復元</button>
@@ -2057,11 +2656,19 @@ const App = (() => {
     // 編集状態をリセット（閉じたら新規モードに戻す）
     if(id==='modalGrowth') editingGrowthId=null;
     if(id==='modalHealth'){ editingHealthId=null; duplicateHealthPersonId=null; }
+    if(id==='modalCatEdit') editingCatKey=null;
+    if(id==='modalTimeCatEdit') editingTimeCatKey=null;
+    if(id==='modalMeasureTypeEdit') editingMeasureTypeKey=null;
   }
 
   function openAddModal(){
     if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
+    if(currentTab==='timelog'){
+      openAddTimeLog();
+      return;
+    }
     if(currentTab==='growth'){
+      if(selectedMeasureKey!=='growth'){ openAddMeasure(); return; }
       editingGrowthId=null;  // 新規モード
       document.getElementById('modalGrowthTitle').textContent='📏 成長記録を追加';
       // 人物選択を構築（全員表示中は選択必須、単一表示中はその人物を既定）
@@ -2341,12 +2948,12 @@ const App = (() => {
     wrap.addEventListener('touchend',e=>{
       if(startX===null) return;
       const dx=e.changedTouches[0].clientX-startX;
-      if(dx<-50&&!open){ delBtn.classList.add('visible'); open=true; }
-      else if(dx>20&&open){ delBtn.classList.remove('visible'); open=false; }
+      if(dx<-50&&!open){ delBtn.classList.add('visible'); wrap.classList.add('swiping'); open=true; }
+      else if(dx>20&&open){ delBtn.classList.remove('visible'); wrap.classList.remove('swiping'); open=false; }
       startX=null;
     },{passive:true});
     document.addEventListener('touchstart',e=>{
-      if(!wrap.contains(e.target)&&open){ delBtn.classList.remove('visible'); open=false; }
+      if(!wrap.contains(e.target)&&open){ delBtn.classList.remove('visible'); wrap.classList.remove('swiping'); open=false; }
     },{passive:true});
   }
 
@@ -2391,7 +2998,9 @@ const App = (() => {
     saveData(); renderPersonList(); renderPersonTabs(); renderGrowthList(); renderHealthList();
   }
 
-  /* ============================================================ カテゴリ管理 ============================================================ */
+  /* ============================================================ 健康管理カテゴリ管理（追加・編集・削除・並べ替え） ============================================================
+     並べ替えは行をタップして選択 → ツールバーの共通▲▼で移動（work-trackerと同じ操作方式）
+     削除は記録一覧と同じ挙動: PCは✕ボタン／モバイルはスワイプ＋🗑、確認なしで専用ゴミ箱へ */
   /* 色選択プルダウンの初期化（1度だけ） */
   function initCatColorSelect(){
     const sel=document.getElementById('newCatColor'); if(!sel||sel.options.length) return;
@@ -2399,33 +3008,80 @@ const App = (() => {
     CAT_COLORS.forEach(c=>{
       const o=document.createElement('option'); o.value=c; o.textContent=colorLabels[c]||c; sel.appendChild(o);
     });
+    // 編集モーダル側の色セレクトも同時に初期化
+    const sel2=document.getElementById('ce_color');
+    if(sel2 && !sel2.options.length) CAT_COLORS.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=colorLabels[c]||c; sel2.appendChild(o); });
   }
-  /* カテゴリ一覧の描画（各行に削除ボタン） */
+  let selectedCatKey=null;  // 並べ替え対象として選択中のカテゴリ
+  let catTrashOpen=false;   // ミニゴミ箱の開閉状態
+  /* カテゴリ一覧の描画（行タップで選択→共通▲▼で移動、✏️で編集、✕/スワイプで削除） */
   function renderCategoryList(){
     const el=document.getElementById('categoryList'); if(!el) return;
     el.innerHTML='';
     const cats=getCategories();
+    // 選択中キーがリストから消えていたら解除
+    if(selectedCatKey && !cats.some(c=>c.key===selectedCatKey)) selectedCatKey=null;
     cats.forEach(c=>{
-      // 使用件数（削除時の注意表示用）
+      // 使用件数（参考表示。削除しても記録側はカテゴリ名のまま残る）
       const used=data.healthRecords.filter(r=>!r.deleted && r.category===c.key).length;
-      const row=document.createElement('div'); row.className='setting-row';
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const delBtn=document.createElement('div'); delBtn.className='habit-swipe-del'; delBtn.innerHTML='🗑<br>削除';
+      delBtn.addEventListener('click',()=>removeCategory(c.key));
+      const row=document.createElement('div');
+      row.className='setting-row reorder-selectable'+(selectedCatKey===c.key?' reorder-selected':'');
       row.innerHTML=`
         <div class="health-icon" style="width:30px;height:30px;font-size:15px;background:var(--${c.color}-soft);color:var(--${c.color})">${c.icon}</div>
-        <div style="flex:1">
+        <div style="flex:1;min-width:0">
           <div class="setting-label">${escHtml(c.key)}</div>
           <div class="setting-desc">${used>0?used+'件で使用中':'未使用'}</div>
         </div>
-        <button class="btn-mini purge">削除</button>
+        <button class="btn-mini edit" data-act="edit">✏️</button>
+        <button class="habit-hover-del" data-act="del">✕</button>
       `;
-      row.querySelector('button').addEventListener('click',()=>removeCategory(c.key));
-      el.appendChild(row);
+      row.addEventListener('click',e=>{ if(e.target.closest('[data-act]'))return; selectCategoryRow(c.key); });
+      row.querySelector('[data-act=edit]').addEventListener('click',e=>{ e.stopPropagation(); openEditCategory(c.key); });
+      row.querySelector('[data-act=del]').addEventListener('click',e=>{ e.stopPropagation(); removeCategory(c.key); });
+      attachSwipe(wrap, delBtn, ()=>removeCategory(c.key));
+      wrap.appendChild(delBtn); wrap.appendChild(row);
+      el.appendChild(wrap);
     });
+    updateCatReorderToolbar();
+    renderCatTrash();
+  }
+  /* 行選択のトグル（再タップで選択解除） */
+  function selectCategoryRow(key){
+    selectedCatKey = selectedCatKey===key ? null : key;
+    renderCategoryList();
+  }
+  /* 並べ替えツールバーの表示・ボタン活性状態を更新 */
+  function updateCatReorderToolbar(){
+    const bar=document.getElementById('catReorderToolbar'); if(!bar) return;
+    const cats=getCategories();
+    if(!selectedCatKey){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const i=cats.findIndex(c=>c.key===selectedCatKey);
+    document.getElementById('catMoveUpBtn').disabled = i<=0;
+    document.getElementById('catMoveDownBtn').disabled = i<0 || i>=cats.length-1;
+  }
+  /* 選択中カテゴリを移動（未削除のものだけで順序を入れ替える） */
+  function moveCategorySelected(dir){
+    if(!selectedCatKey) return;
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    const active=getCategories();
+    const i=active.findIndex(c=>c.key===selectedCatKey);
+    const j=i+dir; if(i<0||j<0||j>=active.length) return;
+    // data.categories（全件）内でのインデックスを使って入れ替える
+    const arr=data.categories;
+    const gi=arr.findIndex(c=>c.key===active[i].key);
+    const gj=arr.findIndex(c=>c.key===active[j].key);
+    [arr[gi],arr[gj]]=[arr[gj],arr[gi]];
+    saveData(); renderCategoryList(); buildHealthCatPills();
   }
   /* カテゴリ追加 */
   function addCategory(){
     const name=document.getElementById('newCatName').value.trim();
     if(!name){ showToast('カテゴリ名を入力してください'); return; }
-    // 重複チェック
+    // 重複チェック（未削除のみ対象。ゴミ箱内の同名は無視）
     if(getCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
     const icon=(document.getElementById('newCatIcon').value.trim())||'🏷';
     const color=document.getElementById('newCatColor').value||'text3';
@@ -2439,33 +3095,440 @@ const App = (() => {
     saveData(); renderCategoryList(); buildHealthCatPills();
     showToast(name+'を追加しました');
   }
-  /* カテゴリ削除（使用中の記録は「その他」に付け替え） */
+  /* カテゴリ編集モーダルを開く */
+  let editingCatKey=null;
+  function openEditCategory(key){
+    const c=getCategories().find(x=>x.key===key); if(!c) return;
+    editingCatKey=key;
+    document.getElementById('ce_icon').value=c.icon||'';
+    document.getElementById('ce_name').value=c.key||'';
+    fieldUpdate('cename');
+    initCatColorSelect();
+    document.getElementById('ce_color').value=c.color||'text3';
+    openModal('modalCatEdit');
+  }
+  /* カテゴリ編集を保存（キー名変更時は記録側も追従） */
+  function saveCategoryEdit(){
+    if(!editingCatKey) return;
+    const name=document.getElementById('ce_name').value.trim();
+    if(!name){ showToast('カテゴリ名を入力してください'); return; }
+    if(name!==editingCatKey && getCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
+    const icon=document.getElementById('ce_icon').value.trim()||'🏷';
+    const color=document.getElementById('ce_color').value||'text3';
+    if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
+    const c=data.categories.find(x=>x.key===editingCatKey);
+    if(c){
+      const oldKey=c.key;
+      c.key=name; c.icon=icon; c.color=color;
+      // 記録側のカテゴリ名を追従
+      if(oldKey!==name) data.healthRecords.forEach(r=>{ if(r.category===oldKey) r.category=name; });
+      if(selectedCat===oldKey) selectedCat=name;
+      if(selectedCatKey===oldKey) selectedCatKey=name;
+      if(healthCatFilter && healthCatFilter.has(oldKey)){ healthCatFilter.delete(oldKey); healthCatFilter.add(name); }
+    }
+    editingCatKey=null;
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    closeModal('modalCatEdit'); showToast('保存しました');
+  }
+  /* カテゴリ削除（確認なし・ゴミ箱送り。記録側のカテゴリ名はそのまま残る） */
   function removeCategory(key){
     const cats=getCategories();
     if(cats.length<=1){ showToast('最後のカテゴリは削除できません'); return; }
-    const used=data.healthRecords.filter(r=>!r.deleted && r.category===key).length;
-    const msg=used>0
-      ? `「${key}」を削除します。\nこのカテゴリの記録 ${used}件は「その他」に変更されます。よろしいですか？`
-      : `「${key}」を削除しますか？`;
-    if(!confirm(msg)) return;
     if(!data.categories || !data.categories.length) data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
-    data.categories=data.categories.filter(c=>c.key!==key);
-    // 付け替え先（「その他」が無ければ先頭カテゴリ）
-    const fallback=data.categories.some(c=>c.key==='その他')?'その他':data.categories[0].key;
-    data.healthRecords.forEach(r=>{ if(r.category===key) r.category=fallback; });
+    const c=data.categories.find(x=>x.key===key); if(!c) return;
+    c.deleted=true; c.deletedAt=new Date().toISOString();
     // フィルタやモーダルの選択が消えたカテゴリを指していたら調整
-    if(selectedCat===key) selectedCat=data.categories[0].key;
+    if(selectedCat===key) selectedCat=getCategories()[0]?.key;
+    if(selectedCatKey===key) selectedCatKey=null;
     if(healthCatFilter) healthCatFilter.delete(key);
     saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
-    showToast('削除しました');
+    showToast('削除しました（ゴミ箱から復元可）');
   }
   /* デフォルトに戻す */
   function resetCategories(){
     if(!confirm('カテゴリを初期状態に戻します。\n追加したカテゴリは削除されます（記録のカテゴリ名は残ります）。よろしいですか？')) return;
     data.categories=DEFAULT_CATEGORIES.map(c=>({...c}));
     selectedCat=data.categories[0].key;
+    selectedCatKey=null;
     saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
     showToast('初期カテゴリに戻しました');
+  }
+  /* ミニゴミ箱（健康管理カテゴリ）の開閉トグル */
+  function toggleMiniTrash(kind){
+    if(kind==='cat'){ catTrashOpen=!catTrashOpen; renderCatTrash(); }
+    if(kind==='timeCat'){ timeCatTrashOpen=!timeCatTrashOpen; renderTimeCatTrash(); }
+    if(kind==='measure'){ measureTrashOpen=!measureTrashOpen; renderMeasureTrash(); }
+  }
+  /* ゴミ箱内一覧の描画（復元・完全削除） */
+  function renderCatTrash(){
+    const toggle=document.getElementById('catTrashToggle');
+    const body=document.getElementById('catTrashBody');
+    const label=document.getElementById('catTrashLabel');
+    if(!toggle||!body||!label) return;
+    const trashed=getDeletedCategories();
+    label.textContent=`🗑 ゴミ箱（${trashed.length}）`;
+    toggle.classList.toggle('open', catTrashOpen);
+    body.classList.toggle('open', catTrashOpen);
+    body.innerHTML='';
+    if(!catTrashOpen) return;
+    if(trashed.length===0){ body.innerHTML='<div class="mini-trash-row">ゴミ箱は空です</div>'; return; }
+    trashed.forEach(c=>{
+      const row=document.createElement('div'); row.className='mini-trash-row';
+      row.innerHTML=`
+        <span>${c.icon}</span>
+        <span class="mt-name">${escHtml(c.key)}</span>
+        <button class="btn-mini restore">復元</button>
+        <button class="btn-mini purge">完全削除</button>
+      `;
+      const btns=row.querySelectorAll('button');
+      btns[0].addEventListener('click',()=>restoreCategory(c.key));
+      btns[1].addEventListener('click',()=>purgeCategory(c.key));
+      body.appendChild(row);
+    });
+  }
+  function restoreCategory(key){
+    const c=getCategoriesAll().find(x=>x.key===key); if(!c) return;
+    delete c.deleted; delete c.deletedAt;
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('復元しました');
+  }
+  /* 完全削除（ここで初めて使用中の記録を「その他」へ付け替える） */
+  function purgeCategory(key){
+    if(!confirm(`「${key}」を完全に削除します。元に戻せません。よろしいですか？`)) return;
+    const fallback=getCategories().some(c=>c.key==='その他')?'その他':(getCategories()[0]?.key||'その他');
+    data.healthRecords.forEach(r=>{ if(r.category===key) r.category=fallback; });
+    data.categories=getCategoriesAll().filter(c=>c.key!==key);
+    saveData(); renderCategoryList(); buildHealthCatPills(); renderHealthList();
+    showToast('完全に削除しました');
+  }
+
+  /* ============================================================ 記録カテゴリ管理（追加・編集・削除・並べ替え） ============================================================ */
+  function initTimeCatColorSelect(){
+    const sel=document.getElementById('newTimeCatColor'); if(!sel||sel.options.length) return;
+    const labels={teal:'青緑',accent:'青',red:'赤',purple:'紫',orange:'橙',green:'緑',pink:'桃',text3:'灰'};
+    CAT_COLORS.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=labels[c]||c; sel.appendChild(o); });
+    const sel2=document.getElementById('tce_color');
+    if(sel2 && !sel2.options.length) CAT_COLORS.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=labels[c]||c; sel2.appendChild(o); });
+  }
+  let selectedTimeCatKey=null;  // 並べ替え対象として選択中の記録カテゴリ
+  let timeCatTrashOpen=false;   // ミニゴミ箱の開閉状態
+  function renderTimeCategoryList(){
+    const el=document.getElementById('timeCategoryList'); if(!el) return;
+    el.innerHTML='';
+    const cats=getTimeCategories();
+    if(selectedTimeCatKey && !cats.some(c=>c.key===selectedTimeCatKey)) selectedTimeCatKey=null;
+    cats.forEach(c=>{
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const delBtn=document.createElement('div'); delBtn.className='habit-swipe-del'; delBtn.innerHTML='🗑<br>削除';
+      delBtn.addEventListener('click',()=>removeTimeCategory(c.key));
+      const row=document.createElement('div');
+      row.className='setting-row reorder-selectable'+(selectedTimeCatKey===c.key?' reorder-selected':'');
+      row.innerHTML=`
+        <div class="health-icon" style="width:30px;height:30px;font-size:15px;background:var(--${c.color}-soft);color:var(--${c.color})">${c.icon}</div>
+        <div style="flex:1;min-width:0"><div class="setting-label">${escHtml(c.key)}</div></div>
+        <button class="btn-mini edit" data-act="edit">✏️</button>
+        <button class="habit-hover-del" data-act="del">✕</button>
+      `;
+      row.addEventListener('click',e=>{ if(e.target.closest('[data-act]'))return; selectTimeCategoryRow(c.key); });
+      row.querySelector('[data-act=edit]').addEventListener('click',e=>{ e.stopPropagation(); openEditTimeCategory(c.key); });
+      row.querySelector('[data-act=del]').addEventListener('click',e=>{ e.stopPropagation(); removeTimeCategory(c.key); });
+      attachSwipe(wrap, delBtn, ()=>removeTimeCategory(c.key));
+      wrap.appendChild(delBtn); wrap.appendChild(row);
+      el.appendChild(wrap);
+    });
+    updateTimeCatReorderToolbar();
+    renderTimeCatTrash();
+  }
+  function selectTimeCategoryRow(key){
+    selectedTimeCatKey = selectedTimeCatKey===key ? null : key;
+    renderTimeCategoryList();
+  }
+  function updateTimeCatReorderToolbar(){
+    const bar=document.getElementById('timeCatReorderToolbar'); if(!bar) return;
+    const cats=getTimeCategories();
+    if(!selectedTimeCatKey){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const i=cats.findIndex(c=>c.key===selectedTimeCatKey);
+    document.getElementById('timeCatMoveUpBtn').disabled = i<=0;
+    document.getElementById('timeCatMoveDownBtn').disabled = i<0 || i>=cats.length-1;
+  }
+  function moveTimeCategorySelected(dir){
+    if(!selectedTimeCatKey) return;
+    ensureTimeCatArray();
+    const active=getTimeCategories();
+    const i=active.findIndex(c=>c.key===selectedTimeCatKey);
+    const j=i+dir; if(i<0||j<0||j>=active.length) return;
+    const arr=data.timeCategories;
+    const gi=arr.findIndex(c=>c.key===active[i].key);
+    const gj=arr.findIndex(c=>c.key===active[j].key);
+    [arr[gi],arr[gj]]=[arr[gj],arr[gi]];
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+  }
+  function ensureTimeCatArray(){ if(!data.timeCategories||!data.timeCategories.length) data.timeCategories=DEFAULT_TIME_CATEGORIES.map(c=>({...c})); }
+  function addTimeCategory(){
+    const name=document.getElementById('newTimeCatName').value.trim();
+    if(!name){ showToast('カテゴリ名を入力してください'); return; }
+    if(getTimeCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
+    const icon=document.getElementById('newTimeCatIcon').value.trim()||'⏱️';
+    const color=document.getElementById('newTimeCatColor').value||'text3';
+    ensureTimeCatArray();
+    data.timeCategories.push({key:name,icon,color});
+    document.getElementById('newTimeCatName').value=''; document.getElementById('newTimeCatIcon').value='';
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+    showToast(name+'を追加しました');
+  }
+  /* 記録カテゴリ編集モーダルを開く */
+  let editingTimeCatKey=null;
+  function openEditTimeCategory(key){
+    const c=getTimeCategories().find(x=>x.key===key); if(!c) return;
+    editingTimeCatKey=key;
+    document.getElementById('tce_icon').value=c.icon||'';
+    document.getElementById('tce_name').value=c.key||'';
+    initTimeCatColorSelect();
+    document.getElementById('tce_color').value=c.color||'text3';
+    openModal('modalTimeCatEdit');
+  }
+  /* 記録カテゴリ編集を保存（キー名変更時は記録側も追従） */
+  function saveTimeCategoryEdit(){
+    if(!editingTimeCatKey) return;
+    const name=document.getElementById('tce_name').value.trim();
+    if(!name){ showToast('カテゴリ名を入力してください'); return; }
+    if(name!==editingTimeCatKey && getTimeCategories().some(c=>c.key===name)){ showToast('同名のカテゴリが既にあります'); return; }
+    const icon=document.getElementById('tce_icon').value.trim()||'⏱️';
+    const color=document.getElementById('tce_color').value||'text3';
+    ensureTimeCatArray();
+    const c=data.timeCategories.find(x=>x.key===editingTimeCatKey);
+    if(c){
+      const oldKey=c.key;
+      c.key=name; c.icon=icon; c.color=color;
+      if(oldKey!==name) data.timeLogs.forEach(l=>{ if(l.categoryKey===oldKey) l.categoryKey=name; });
+      if(tlSelectedCat===oldKey) tlSelectedCat=name;
+      if(selectedTimeCatKey===oldKey) selectedTimeCatKey=name;
+    }
+    editingTimeCatKey=null;
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid(); renderTimeLogList();
+    closeModal('modalTimeCatEdit'); showToast('保存しました');
+  }
+  /* 記録カテゴリ削除（確認なし・ゴミ箱送り。記録側のカテゴリ名はそのまま残る） */
+  function removeTimeCategory(key){
+    ensureTimeCatArray();
+    if(getTimeCategories().length<=1){ showToast('最後のカテゴリは削除できません'); return; }
+    const c=data.timeCategories.find(x=>x.key===key); if(!c) return;
+    c.deleted=true; c.deletedAt=new Date().toISOString();
+    if(selectedTimeCatKey===key) selectedTimeCatKey=null;
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+    showToast('削除しました（ゴミ箱から復元可）');
+  }
+  function resetTimeCategories(){
+    if(!confirm('記録カテゴリを初期状態に戻しますか？')) return;
+    data.timeCategories=DEFAULT_TIME_CATEGORIES.map(c=>({...c}));
+    selectedTimeCatKey=null;
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+    showToast('初期に戻しました');
+  }
+  /* ゴミ箱内一覧の描画（復元・完全削除） */
+  function renderTimeCatTrash(){
+    const toggle=document.getElementById('timeCatTrashToggle');
+    const body=document.getElementById('timeCatTrashBody');
+    const label=document.getElementById('timeCatTrashLabel');
+    if(!toggle||!body||!label) return;
+    const trashed=getDeletedTimeCategories();
+    label.textContent=`🗑 ゴミ箱（${trashed.length}）`;
+    toggle.classList.toggle('open', timeCatTrashOpen);
+    body.classList.toggle('open', timeCatTrashOpen);
+    body.innerHTML='';
+    if(!timeCatTrashOpen) return;
+    if(trashed.length===0){ body.innerHTML='<div class="mini-trash-row">ゴミ箱は空です</div>'; return; }
+    trashed.forEach(c=>{
+      const row=document.createElement('div'); row.className='mini-trash-row';
+      row.innerHTML=`
+        <span>${c.icon}</span>
+        <span class="mt-name">${escHtml(c.key)}</span>
+        <button class="btn-mini restore">復元</button>
+        <button class="btn-mini purge">完全削除</button>
+      `;
+      const btns=row.querySelectorAll('button');
+      btns[0].addEventListener('click',()=>restoreTimeCategory(c.key));
+      btns[1].addEventListener('click',()=>purgeTimeCategory(c.key));
+      body.appendChild(row);
+    });
+  }
+  function restoreTimeCategory(key){
+    const c=getTimeCategoriesAll().find(x=>x.key===key); if(!c) return;
+    delete c.deleted; delete c.deletedAt;
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+    showToast('復元しました');
+  }
+  function purgeTimeCategory(key){
+    if(!confirm(`「${key}」を完全に削除します。元に戻せません。よろしいですか？`)) return;
+    data.timeCategories=getTimeCategoriesAll().filter(c=>c.key!==key);
+    saveData(); renderTimeCategoryList(); renderQuickLogGrid();
+    showToast('完全に削除しました');
+  }
+
+  /* ============================================================ 測定項目管理（追加・編集・削除・並べ替え） ============================================================ */
+  function initMeasureColorSelect(){
+    const sel=document.getElementById('newMeasureColor'); if(!sel||sel.options.length) return;
+    const labels={teal:'青緑',accent:'青',red:'赤',purple:'紫',orange:'橙',green:'緑',pink:'桃',text3:'灰'};
+    CAT_COLORS.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=labels[c]||c; sel.appendChild(o); });
+    const sel2=document.getElementById('mte_color');
+    if(sel2 && !sel2.options.length) CAT_COLORS.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=labels[c]||c; sel2.appendChild(o); });
+  }
+  let selectedMeasureTypeKey=null;  // 並べ替え対象として選択中の測定項目
+  let measureTrashOpen=false;       // ミニゴミ箱の開閉状態
+  function renderMeasureTypeList(){
+    const el=document.getElementById('measureTypeList'); if(!el) return;
+    el.innerHTML='';
+    const types=getMeasureTypes();
+    if(selectedMeasureTypeKey && !types.some(t=>t.key===selectedMeasureTypeKey)) selectedMeasureTypeKey=null;
+    types.forEach(t=>{
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const delBtn=document.createElement('div'); delBtn.className='habit-swipe-del'; delBtn.innerHTML='🗑<br>削除';
+      delBtn.addEventListener('click',()=>removeMeasureType(t.key));
+      const row=document.createElement('div');
+      row.className='setting-row reorder-selectable'+(selectedMeasureTypeKey===t.key?' reorder-selected':'');
+      row.innerHTML=`
+        <div class="health-icon" style="width:30px;height:30px;font-size:13px;background:var(--${t.color}-soft);color:var(--${t.color})">${t.label.slice(0,1)}</div>
+        <div style="flex:1;min-width:0"><div class="setting-label">${escHtml(t.label)}</div><div class="setting-desc">${escHtml(t.unit)}${t.fields===2?' ・ 2値':''}</div></div>
+        <button class="btn-mini edit" data-act="edit">✏️</button>
+        <button class="habit-hover-del" data-act="del">✕</button>
+      `;
+      row.addEventListener('click',e=>{ if(e.target.closest('[data-act]'))return; selectMeasureTypeRow(t.key); });
+      row.querySelector('[data-act=edit]').addEventListener('click',e=>{ e.stopPropagation(); openEditMeasureType(t.key); });
+      row.querySelector('[data-act=del]').addEventListener('click',e=>{ e.stopPropagation(); removeMeasureType(t.key); });
+      attachSwipe(wrap, delBtn, ()=>removeMeasureType(t.key));
+      wrap.appendChild(delBtn); wrap.appendChild(row);
+      el.appendChild(wrap);
+    });
+    updateMeasureReorderToolbar();
+    renderMeasureTrash();
+  }
+  function selectMeasureTypeRow(key){
+    selectedMeasureTypeKey = selectedMeasureTypeKey===key ? null : key;
+    renderMeasureTypeList();
+  }
+  function updateMeasureReorderToolbar(){
+    const bar=document.getElementById('measureReorderToolbar'); if(!bar) return;
+    const types=getMeasureTypes();
+    if(!selectedMeasureTypeKey){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const i=types.findIndex(t=>t.key===selectedMeasureTypeKey);
+    document.getElementById('measureMoveUpBtn').disabled = i<=0;
+    document.getElementById('measureMoveDownBtn').disabled = i<0 || i>=types.length-1;
+  }
+  function moveMeasureTypeSelected(dir){
+    if(!selectedMeasureTypeKey) return;
+    ensureMeasureArray();
+    const active=getMeasureTypes();
+    const i=active.findIndex(t=>t.key===selectedMeasureTypeKey);
+    const j=i+dir; if(i<0||j<0||j>=active.length) return;
+    const arr=data.measureTypes;
+    const gi=arr.findIndex(t=>t.key===active[i].key);
+    const gj=arr.findIndex(t=>t.key===active[j].key);
+    [arr[gi],arr[gj]]=[arr[gj],arr[gi]];
+    saveData(); renderMeasureTypeList(); renderMeasureTabs();
+  }
+  function ensureMeasureArray(){ if(!data.measureTypes||!data.measureTypes.length) data.measureTypes=DEFAULT_MEASURE_TYPES.map(t=>({...t})); }
+  function addMeasureType(){
+    const label=document.getElementById('newMeasureLabel').value.trim();
+    if(!label){ showToast('項目名を入力してください'); return; }
+    if(getMeasureTypes().some(t=>t.label===label)){ showToast('同名の項目が既にあります'); return; }
+    const unit=document.getElementById('newMeasureUnit').value.trim();
+    const color=document.getElementById('newMeasureColor').value||'text3';
+    const fields=parseInt(document.getElementById('newMeasureFields').value)||1;
+    ensureMeasureArray();
+    const key='m_'+uid();
+    data.measureTypes.push({key,label,unit,color,fields,low:0,high:9999});
+    document.getElementById('newMeasureLabel').value=''; document.getElementById('newMeasureUnit').value='';
+    saveData(); renderMeasureTypeList(); renderMeasureTabs();
+    showToast(label+'を追加しました');
+  }
+  /* 測定項目編集モーダルを開く */
+  let editingMeasureTypeKey=null;
+  function openEditMeasureType(key){
+    const t=getMeasureTypes().find(x=>x.key===key); if(!t) return;
+    editingMeasureTypeKey=key;
+    document.getElementById('mte_label').value=t.label||'';
+    document.getElementById('mte_unit').value=t.unit||'';
+    initMeasureColorSelect();
+    document.getElementById('mte_color').value=t.color||'text3';
+    document.getElementById('mte_fields').value=String(t.fields||1);
+    openModal('modalMeasureTypeEdit');
+  }
+  /* 測定項目編集を保存（label/unit/color/fieldsを更新。keyは不変なので測定値は自動で追従） */
+  function saveMeasureTypeEdit(){
+    if(!editingMeasureTypeKey) return;
+    const label=document.getElementById('mte_label').value.trim();
+    if(!label){ showToast('項目名を入力してください'); return; }
+    if(getMeasureTypes().some(t=>t.key!==editingMeasureTypeKey && t.label===label)){ showToast('同名の項目が既にあります'); return; }
+    const unit=document.getElementById('mte_unit').value.trim();
+    const color=document.getElementById('mte_color').value||'text3';
+    const fields=parseInt(document.getElementById('mte_fields').value)||1;
+    ensureMeasureArray();
+    const t=data.measureTypes.find(x=>x.key===editingMeasureTypeKey);
+    if(t){ t.label=label; t.unit=unit; t.color=color; t.fields=fields; }
+    editingMeasureTypeKey=null;
+    saveData(); renderMeasureTypeList(); renderMeasureTabs(); renderMeasureView();
+    closeModal('modalMeasureTypeEdit'); showToast('保存しました');
+  }
+  /* 測定項目削除（確認なし・ゴミ箱送り。測定値は保持され、復元すれば再表示される） */
+  function removeMeasureType(key){
+    ensureMeasureArray();
+    if(getMeasureTypes().length<=1){ showToast('最後の項目は削除できません'); return; }
+    const t=data.measureTypes.find(x=>x.key===key); if(!t) return;
+    t.deleted=true; t.deletedAt=new Date().toISOString();
+    if(selectedMeasureKey===key) selectedMeasureKey='growth';
+    if(selectedMeasureTypeKey===key) selectedMeasureTypeKey=null;
+    saveData(); renderMeasureTypeList(); renderMeasureTabs(); renderMeasureView();
+    showToast('削除しました（ゴミ箱から復元可）');
+  }
+  function resetMeasureTypes(){
+    if(!confirm('測定項目を初期状態に戻しますか？')) return;
+    data.measureTypes=DEFAULT_MEASURE_TYPES.map(t=>({...t}));
+    selectedMeasureTypeKey=null;
+    saveData(); renderMeasureTypeList(); renderMeasureTabs();
+    showToast('初期に戻しました');
+  }
+  /* ゴミ箱内一覧の描画（復元・完全削除） */
+  function renderMeasureTrash(){
+    const toggle=document.getElementById('measureTrashToggle');
+    const body=document.getElementById('measureTrashBody');
+    const label=document.getElementById('measureTrashLabel');
+    if(!toggle||!body||!label) return;
+    const trashed=getDeletedMeasureTypes();
+    label.textContent=`🗑 ゴミ箱（${trashed.length}）`;
+    toggle.classList.toggle('open', measureTrashOpen);
+    body.classList.toggle('open', measureTrashOpen);
+    body.innerHTML='';
+    if(!measureTrashOpen) return;
+    if(trashed.length===0){ body.innerHTML='<div class="mini-trash-row">ゴミ箱は空です</div>'; return; }
+    trashed.forEach(t=>{
+      const row=document.createElement('div'); row.className='mini-trash-row';
+      row.innerHTML=`
+        <span>${t.label.slice(0,1)}</span>
+        <span class="mt-name">${escHtml(t.label)}（${escHtml(t.unit)}）</span>
+        <button class="btn-mini restore">復元</button>
+        <button class="btn-mini purge">完全削除</button>
+      `;
+      const btns=row.querySelectorAll('button');
+      btns[0].addEventListener('click',()=>restoreMeasureType(t.key));
+      btns[1].addEventListener('click',()=>purgeMeasureType(t.key));
+      body.appendChild(row);
+    });
+  }
+  function restoreMeasureType(key){
+    const t=getMeasureTypesAll().find(x=>x.key===key); if(!t) return;
+    delete t.deleted; delete t.deletedAt;
+    saveData(); renderMeasureTypeList(); renderMeasureTabs();
+    showToast('復元しました');
+  }
+  /* 完全削除（紐づく測定値も合わせて削除） */
+  function purgeMeasureType(key){
+    if(!confirm('この項目を完全に削除します。紐づく測定値も削除され、元に戻せません。よろしいですか？')) return;
+    data.measureTypes=getMeasureTypesAll().filter(t=>t.key!==key);
+    data.measures=data.measures.filter(m=>m.typeKey!==key);
+    saveData(); renderMeasureTypeList(); renderMeasureTabs(); renderMeasureView();
+    showToast('完全に削除しました');
   }
 
   /* ============================================================ インポート（対象人物に紐付け） ============================================================ */
@@ -2722,6 +3785,10 @@ const App = (() => {
         growth: active(data.growth),
         healthRecords: active(data.healthRecords),
         categories: data.categories || [],
+        timeLogs: active(data.timeLogs),
+        timeCategories: data.timeCategories || [],
+        measures: active(data.measures),
+        measureTypes: data.measureTypes || [],
       };
     }
     // Content-Typeはtext/plainでCORSプリフライト回避
@@ -2740,7 +3807,7 @@ const App = (() => {
       if(!json) return;
       if(json.status==='ok'){
         const c=json.counts||{};
-        showToast(`⬆ 送信: 人物${c.persons??'?'} 成長${c.growth??'?'} 健康${c.healthRecords??'?'}`, 2800);
+        showToast(`⬆ 送信: 人物${c.persons??'?'} 成長${c.growth??'?'} 健康${c.healthRecords??'?'} 時間記録${c.timeLogs??'?'} 測定${c.measures??'?'}`, 3200);
       }
       else showToast('送信エラー: '+(json.message||'不明'));
     }catch(e){ showToast('送信失敗: '+(e.message||'ネットワークエラー')); }
@@ -2763,6 +3830,8 @@ const App = (() => {
           saveData();
           renderPersonTabs(); renderGrowthList(); renderHealthList(); renderTrash(); renderPersonList();
           renderCategoryList(); buildHealthCatPills();
+          renderTimeCategoryList(); renderMeasureTypeList(); renderQuickLogGrid(); renderMeasureTabs();
+          renderTimeLogList(); renderMeasureView();
           // 受信件数を表示（同期できているか可視化）
           const np=data.persons.length, ng=data.growth.filter(r=>!r.deleted).length, nh=data.healthRecords.filter(r=>!r.deleted).length;
           showToast(`⬇ 受信: 人物${np} 成長${ng} 健康${nh}`, 2800);
@@ -2781,8 +3850,538 @@ const App = (() => {
   }
   function escHtml(s){ return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''; }
 
-  /* モーダル外クリックで閉じる */
-  document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('open'); }));
+  /* ============================================================ 時間記録（タイムログ） ============================================================
+     work-tracker由来。カテゴリを選び開始/終了時刻を記録。
+     - クイックボタンをタップ: 即時の点記録（開始=終了）として保存
+     - 長押し: 計測開始（ストップウォッチ）。停止で終了時刻を確定。 */
+  let timelogPersonId = 'all';
+  let activeLogTimerId = null;
+
+  function getActiveLog(){
+    return data.timeLogs.find(l=>!l.deleted && !l.end && (timelogPersonId==='all' || l.personId===timelogPersonId));
+  }
+
+  function renderQuickLogGrid(){
+    const grid=document.getElementById('quickLogGrid'); if(!grid) return;
+    grid.innerHTML='';
+    const active=getActiveLog();
+    getTimeCategories().forEach(c=>{
+      const btn=document.createElement('button');
+      const isRunning = active && active.categoryKey===c.key;
+      btn.className='quick-log-btn'+(isRunning?' running':'');
+      btn.innerHTML=`<span class="qlb-icon">${c.icon}</span><span class="qlb-label">${escHtml(c.key)}</span>`;
+      let pressTimer=null, longPressed=false;
+      const startPress=()=>{ longPressed=false; pressTimer=setTimeout(()=>{ longPressed=true; startActiveLog(c.key); }, 500); };
+      const endPress=()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; if(!longPressed) quickLog(c.key); } };
+      btn.addEventListener('mousedown',startPress);
+      btn.addEventListener('touchstart',startPress,{passive:true});
+      btn.addEventListener('mouseup',endPress);
+      btn.addEventListener('touchend',endPress);
+      btn.addEventListener('mouseleave',()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } });
+      grid.appendChild(btn);
+    });
+  }
+
+  function resolveTimelogPerson(){
+    return timelogPersonId!=='all' ? timelogPersonId : (data.persons[0]?.id || null);
+  }
+
+  function quickLog(catKey){
+    const pid=resolveTimelogPerson();
+    if(!pid){ switchTab('settings'); showToast('先に人物を追加してください'); return; }
+    const now=new Date().toISOString();
+    data.timeLogs.push({ id:uid(), personId:pid, categoryKey:catKey, start:now, end:now, memo:'', createdAt:now });
+    saveData(); renderTimeLogList(); showToast(`${catKey} を記録しました`);
+  }
+
+  function startActiveLog(catKey){
+    const pid=resolveTimelogPerson();
+    if(!pid){ switchTab('settings'); showToast('先に人物を追加してください'); return; }
+    const cur=getActiveLog();
+    if(cur){ cur.end=new Date().toISOString(); }
+    const now=new Date().toISOString();
+    data.timeLogs.push({ id:uid(), personId:pid, categoryKey:catKey, start:now, end:null, memo:'', createdAt:now });
+    saveData(); renderQuickLogGrid(); updateActiveLogCard(); renderTimeLogList();
+    showToast(`${catKey} の計測を開始`);
+  }
+
+  function stopActiveLog(){
+    const cur=getActiveLog(); if(!cur) return;
+    cur.end=new Date().toISOString(); cur.updatedAt=cur.end;
+    saveData(); renderQuickLogGrid(); updateActiveLogCard(); renderTimeLogList();
+    showToast('記録を保存しました');
+  }
+
+  function updateActiveLogCard(){
+    const card=document.getElementById('activeLogCard');
+    const active=getActiveLog();
+    if(activeLogTimerId){ clearInterval(activeLogTimerId); activeLogTimerId=null; }
+    if(!active){ card.style.display='none'; return; }
+    const cm=timeCatMeta(active.categoryKey);
+    document.getElementById('activeLogIcon').textContent=cm.icon;
+    document.getElementById('activeLogCat').textContent=active.categoryKey;
+    document.getElementById('activeLogStart').textContent='開始 '+fmtClock(active.start);
+    card.style.display='';
+    const tick=()=>{ const ms=Date.now()-new Date(active.start).getTime(); document.getElementById('activeLogTimer').textContent=fmtDuration(ms); };
+    tick(); activeLogTimerId=setInterval(tick,1000);
+  }
+
+  function fmtClock(iso){ const d=new Date(iso); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+  function fmtDuration(ms){
+    const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+    if(h>0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    return `${m}:${String(sec).padStart(2,'0')}`;
+  }
+
+  function renderTimeLogList(){
+    const list=document.getElementById('timeLogList');
+    const empty=document.getElementById('timeLogEmpty');
+    if(!list) return;
+    let logs=data.timeLogs.filter(l=>!l.deleted && (timelogPersonId==='all'||l.personId===timelogPersonId));
+    logs.sort((a,b)=>String(b.start).localeCompare(String(a.start)));
+    list.innerHTML='';
+    if(logs.length===0){ empty.style.display=''; return; }
+    empty.style.display='none';
+    const groups={};
+    logs.forEach(l=>{ const d=String(l.start).slice(0,10); (groups[d]=groups[d]||[]).push(l); });
+    Object.keys(groups).sort((a,b)=>b.localeCompare(a)).forEach(day=>{
+      const g=document.createElement('div'); g.className='tlog-day-group';
+      const head=document.createElement('div'); head.className='tlog-day-head'; head.textContent=formatDateJP(day);
+      g.appendChild(head);
+      groups[day].forEach(l=>g.appendChild(buildTimeLogItem(l)));
+      list.appendChild(g);
+    });
+  }
+
+  function buildTimeLogItem(l){
+    const cm=timeCatMeta(l.categoryKey);
+    const person=data.persons.find(p=>p.id===l.personId);
+    const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+    const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+    del.addEventListener('click',()=>softDelete('timeLogs',l.id));
+    const item=document.createElement('div'); item.className='tlog-item'; item.style.cursor='pointer';
+    const isPoint = l.start===l.end;
+    const dur = (l.end && !isPoint) ? fmtDuration(new Date(l.end)-new Date(l.start)) : '';
+    const timeStr = isPoint ? fmtClock(l.start)
+                  : l.end ? `${fmtClock(l.start)} → ${fmtClock(l.end)}`
+                  : `${fmtClock(l.start)} → 計測中`;
+    item.innerHTML=`
+      <div class="tlog-icon" style="background:var(--${cm.color}-soft);color:var(--${cm.color})">${cm.icon}</div>
+      <div class="tlog-body">
+        <div class="tlog-cat">${escHtml(l.categoryKey)}${person&&timelogPersonId==='all'?` ・ <span style="font-size:11px;color:var(--text3)">${escHtml(person.name)}</span>`:''}</div>
+        <div class="tlog-time">${timeStr}${dur?` <span class="tlog-dur">(${dur})</span>`:''}</div>
+        ${l.memo?`<div class="tlog-memo">${escHtml(l.memo)}</div>`:''}
+      </div>
+      <div class="item-btn-row">
+        <button class="habit-hover-del">✕</button>
+        <button class="habit-hover-edit" title="編集">✏️</button>
+      </div>
+    `;
+    item.addEventListener('click',e=>{
+      if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit')) return;
+      openEditTimeLog(l.id);
+    });
+    item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditTimeLog(l.id));
+    item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('timeLogs',l.id));
+    attachSwipe(wrap, del, ()=>softDelete('timeLogs',l.id));
+    wrap.appendChild(del); wrap.appendChild(item);
+    return wrap;
+  }
+
+  let editingTimeLogId=null;
+  function openAddTimeLog(){
+    if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
+    editingTimeLogId=null;
+    buildTimeLogCatPills(getTimeCategories()[0].key);
+    const now=new Date();
+    document.getElementById('tl_date').value=`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`;
+    document.getElementById('tl_start').value=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    document.getElementById('tl_end').value='';
+    document.getElementById('tl_memo').value='';
+    const sel=document.getElementById('tl_person');
+    sel.innerHTML=''; data.persons.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
+    sel.value=resolveTimelogPerson()||data.persons[0].id;
+    document.getElementById('modalTimeLogTitle').textContent='⏱️ 記録を追加';
+    openModal('modalTimeLog');
+  }
+  function openEditTimeLog(id){
+    const l=data.timeLogs.find(x=>x.id===id); if(!l) return;
+    editingTimeLogId=id;
+    buildTimeLogCatPills(l.categoryKey);
+    const sd=new Date(l.start);
+    document.getElementById('tl_date').value=`${sd.getFullYear()}/${String(sd.getMonth()+1).padStart(2,'0')}/${String(sd.getDate()).padStart(2,'0')}`;
+    document.getElementById('tl_start').value=`${String(sd.getHours()).padStart(2,'0')}:${String(sd.getMinutes()).padStart(2,'0')}`;
+    if(l.end && l.end!==l.start){ const ed=new Date(l.end); document.getElementById('tl_end').value=`${String(ed.getHours()).padStart(2,'0')}:${String(ed.getMinutes()).padStart(2,'0')}`; }
+    else { document.getElementById('tl_end').value=''; }
+    document.getElementById('tl_memo').value=l.memo||'';
+    const sel=document.getElementById('tl_person');
+    sel.innerHTML=''; data.persons.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
+    sel.value=l.personId;
+    document.getElementById('modalTimeLogTitle').textContent='⏱️ 記録を編集';
+    openModal('modalTimeLog');
+  }
+
+  let tlSelectedCat='授乳';
+  function buildTimeLogCatPills(selected){
+    tlSelectedCat=selected||getTimeCategories()[0].key;
+    const wrap=document.getElementById('tl_cat_pills'); if(!wrap) return;
+    wrap.innerHTML='';
+    getTimeCategories().forEach(c=>{
+      const pill=document.createElement('button');
+      pill.type='button';
+      pill.className='cat-pill'+(c.key===tlSelectedCat?' selected':'');
+      pill.style.cssText = c.key===tlSelectedCat ? `background:var(--${c.color}-soft);border-color:var(--${c.color});color:var(--${c.color})` : '';
+      pill.innerHTML=`${c.icon} ${c.key}`;
+      pill.addEventListener('click',()=>{ tlSelectedCat=c.key; buildTimeLogCatPills(c.key); });
+      wrap.appendChild(pill);
+    });
+  }
+
+  function saveTimeLog(){
+    const dateStr=document.getElementById('tl_date').value.trim();
+    const startStr=document.getElementById('tl_start').value.trim();
+    const endStr=document.getElementById('tl_end').value.trim();
+    const memo=document.getElementById('tl_memo').value.trim();
+    const pid=document.getElementById('tl_person').value;
+    if(!dateStr || !startStr){ showToast('日付と開始時刻を入力してください'); return; }
+    const iso=dateStr.replace(/\//g,'-');
+    const startISO=new Date(`${iso}T${startStr}:00`);
+    let endISO = endStr ? new Date(`${iso}T${endStr}:00`) : new Date(`${iso}T${startStr}:00`);
+    if(isNaN(startISO)){ showToast('時刻の形式が正しくありません'); return; }
+    // 終了が開始より前なら翌日扱い
+    if(endStr && endISO<startISO) endISO.setDate(endISO.getDate()+1);
+    const sISO=startISO.toISOString(), eISO=endISO.toISOString();
+    if(editingTimeLogId){
+      const l=data.timeLogs.find(x=>x.id===editingTimeLogId);
+      if(l) Object.assign(l,{ personId:pid, categoryKey:tlSelectedCat, start:sISO, end:eISO, memo, updatedAt:new Date().toISOString() });
+      editingTimeLogId=null;
+    }else{
+      data.timeLogs.push({ id:uid(), personId:pid, categoryKey:tlSelectedCat, start:sISO, end:eISO, memo, createdAt:new Date().toISOString() });
+    }
+    saveData(); renderTimeLogList(); renderQuickLogGrid(); updateActiveLogCard();
+    closeModal('modalTimeLog'); showToast('保存しました');
+  }
+
+  /* ============================================================ スケジュール（予定表） ============================================================ */
+  let scheduleView='day';
+  let scheduleAnchor=new Date();
+  let schedulePersonId='all';
+
+  function setScheduleView(v){ scheduleView=v;
+    document.getElementById('svtDay').classList.toggle('active', v==='day');
+    document.getElementById('svtWeek').classList.toggle('active', v==='week');
+    renderSchedule();
+  }
+  function scheduleNav(dir){
+    const d=new Date(scheduleAnchor);
+    if(scheduleView==='day') d.setDate(d.getDate()+dir); else d.setDate(d.getDate()+dir*7);
+    scheduleAnchor=d; renderSchedule();
+  }
+  function scheduleToday(){ scheduleAnchor=new Date(); renderSchedule(); }
+  function weekStart(d){ const x=new Date(d); x.setDate(x.getDate()-x.getDay()); x.setHours(0,0,0,0); return x; }
+  function ymdLocal(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+  function renderSchedule(){
+    const grid=document.getElementById('schedGrid');
+    const label=document.getElementById('schedRangeLabel');
+    if(!grid) return;
+    let days=[];
+    if(scheduleView==='day'){ days=[new Date(scheduleAnchor)]; }
+    else { const ws=weekStart(scheduleAnchor); for(let i=0;i<7;i++){ const d=new Date(ws); d.setDate(ws.getDate()+i); days.push(d); } }
+    if(scheduleView==='day'){ label.textContent=formatDateJP(ymdLocal(days[0])); }
+    else { label.textContent=`${formatDateJP(ymdLocal(days[0]))} 〜 ${formatDateJP(ymdLocal(days[6]))}`; }
+
+    const todayStr=ymdLocal(new Date());
+    const wd=['日','月','火','水','木','金','土'];
+    let html='<div class="sched-dayhead-row"><div class="sched-dayhead-spacer"></div>';
+    days.forEach(d=>{
+      const isToday=ymdLocal(d)===todayStr;
+      html+=`<div class="sched-dayhead${isToday?' today':''}"><div>${d.getMonth()+1}/${d.getDate()}</div><div class="dh-day">(${wd[d.getDay()]})</div></div>`;
+    });
+    html+='</div><div style="position:relative">';
+    for(let h=0;h<24;h++){
+      html+=`<div class="sched-hour-row"><div class="sched-hour-label">${String(h).padStart(2,'0')}:00</div><div class="sched-hour-cols">`;
+      days.forEach(()=>{ html+='<div class="sched-col"></div>'; });
+      html+='</div></div>';
+    }
+    html+='</div>';
+    grid.innerHTML=html;
+
+    const hourRowH=48;
+    days.forEach((day, di)=>{
+      const logs=data.timeLogs.filter(l=>!l.deleted && (schedulePersonId==='all'||l.personId===schedulePersonId) && l.end && l.start);
+      logs.forEach(l=>{
+        const s=new Date(l.start), e=new Date(l.end);
+        const dayStart=new Date(day); dayStart.setHours(0,0,0,0);
+        const dayEnd=new Date(day); dayEnd.setHours(23,59,59,999);
+        if(e<dayStart || s>dayEnd) return;
+        const segStart = s<dayStart?dayStart:s;
+        const segEnd = e>dayEnd?dayEnd:e;
+        let topMin=segStart.getHours()*60+segStart.getMinutes();
+        let durMin=Math.max((segEnd-segStart)/60000, l.start===l.end?20:8);
+        const cm=timeCatMeta(l.categoryKey);
+        placeSchedEvent(grid, di, days.length, topMin, durMin, cm, l, hourRowH);
+      });
+    });
+    const nowIdx=days.findIndex(d=>ymdLocal(d)===todayStr);
+    if(nowIdx>=0){ const now=new Date(); placeNowLine(grid, nowIdx, days.length, now.getHours()*60+now.getMinutes(), hourRowH); }
+    requestAnimationFrame(()=>{ const sc=document.getElementById('schedScroll'); if(sc){ const now=new Date(); sc.scrollTop=Math.max(0,(now.getHours()-1)*hourRowH); } });
+  }
+
+  function placeSchedEvent(grid, dayIdx, dayCount, topMin, durMin, cm, log, hourRowH){
+    const body=grid.children[1]; if(!body) return;
+    const ev=document.createElement('div'); ev.className='sched-event';
+    ev.style.top=((topMin/60)*hourRowH)+'px';
+    ev.style.height=Math.max((durMin/60)*hourRowH-2, 14)+'px';
+    ev.style.left=`calc(42px + (100% - 42px) / ${dayCount} * ${dayIdx} + 1px)`;
+    ev.style.width=`calc((100% - 42px) / ${dayCount} - 2px)`;
+    ev.style.background=`var(--${cm.color})`;
+    const isPoint=log.start===log.end;
+    ev.innerHTML=`<div>${cm.icon} ${escHtml(log.categoryKey)}</div><div class="se-time">${isPoint?fmtClock(log.start):fmtClock(log.start)+'-'+fmtClock(log.end)}</div>`;
+    ev.addEventListener('click',()=>openEditTimeLog(log.id));
+    body.appendChild(ev);
+  }
+  function placeNowLine(grid, dayIdx, dayCount, topMin, hourRowH){
+    const body=grid.children[1]; if(!body) return;
+    const line=document.createElement('div'); line.className='sched-now-line';
+    line.style.top=((topMin/60)*hourRowH)+'px';
+    line.style.left=`calc(42px + (100% - 42px) / ${dayCount} * ${dayIdx})`;
+    line.style.width=`calc((100% - 42px) / ${dayCount})`;
+    body.appendChild(line);
+  }
+
+  function renderTimelogPersonTabs(){
+    [['timelogPersonTabs', v=>{timelogPersonId=v;}, ()=>timelogPersonId, ()=>{renderQuickLogGrid();renderTimeLogList();updateActiveLogCard();}],
+     ['schedulePersonTabs', v=>{schedulePersonId=v;}, ()=>schedulePersonId, ()=>renderSchedule()]
+    ].forEach(([elId,setter,getter,after])=>{
+      const el=document.getElementById(elId); if(!el) return;
+      el.innerHTML='';
+      if(data.persons.length===0){ el.innerHTML='<span style="font-size:13px;color:var(--text3)">設定タブから人物を追加してください</span>'; return; }
+      const allBtn=document.createElement('button');
+      allBtn.className='person-tab'+(getter()==='all'?' active':'');
+      allBtn.textContent='全員';
+      allBtn.addEventListener('click',()=>{ setter('all'); renderTimelogPersonTabs(); after(); });
+      el.appendChild(allBtn);
+      data.persons.forEach(p=>{
+        const btn=document.createElement('button');
+        btn.className='person-tab'+(getter()===p.id?' active':'');
+        btn.textContent=p.name;
+        btn.addEventListener('click',()=>{ setter(p.id); renderTimelogPersonTabs(); after(); });
+        el.appendChild(btn);
+      });
+    });
+  }
+
+  /* ============================================================ 測定値（血圧・血糖値など任意項目） ============================================================
+     測定タブで、成長(身長体重等)と任意の測定項目を切り替えて推移グラフ＋一覧を表示。
+     selectedMeasureKey が 'growth' のときは既存の成長ビュー、それ以外は測定値ビュー。 */
+  let selectedMeasureKey = 'growth';   // 'growth' または measureType.key
+  let measureChart = null;
+
+  function renderMeasureTabs(){
+    const el=document.getElementById('measureTabs'); if(!el) return;
+    el.innerHTML='';
+    // 「成長」タブ（身長体重等）＋ 各測定項目
+    const tabs=[{key:'growth', label:'📏 成長'}].concat(getMeasureTypes().map(t=>({key:t.key, label:t.label})));
+    tabs.forEach(t=>{
+      const btn=document.createElement('button');
+      btn.className='measure-tab'+(t.key===selectedMeasureKey?' active':'');
+      btn.textContent=t.label;
+      btn.addEventListener('click',()=>{ selectedMeasureKey=t.key; renderMeasureTabs(); renderMeasureView(); });
+      el.appendChild(btn);
+    });
+  }
+
+  /* 測定タブのビュー切り替え */
+  function renderMeasureView(){
+    const growthView=document.getElementById('growthView');
+    const measureView=document.getElementById('measureView');
+    if(selectedMeasureKey==='growth'){
+      growthView.style.display='';
+      measureView.style.display='none';
+      renderGrowthList();  // 既存の成長グラフ＋一覧
+    }else{
+      growthView.style.display='none';
+      measureView.style.display='';
+      renderMeasureList();
+      renderMeasureChart();
+    }
+  }
+
+  /* 測定値一覧 */
+  function renderMeasureList(){
+    const list=document.getElementById('measureList');
+    const empty=document.getElementById('measureEmpty');
+    if(!list) return;
+    const t=measureTypeMeta(selectedMeasureKey);
+    const showAll=currentPersonId==='all';
+    let recs=data.measures.filter(m=>!m.deleted && m.typeKey===selectedMeasureKey && (showAll||m.personId===currentPersonId));
+    recs.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    document.getElementById('measureChartTitle').textContent=`📈 ${t.label}の推移（${t.unit}）`;
+    list.innerHTML='';
+    if(recs.length===0){ empty.style.display=''; return; }
+    empty.style.display='none';
+    recs.forEach(m=>{
+      const person=data.persons.find(p=>p.id===m.personId);
+      const wrap=document.createElement('div'); wrap.className='habit-swipe-wrap';
+      const del=document.createElement('div'); del.className='habit-swipe-del'; del.innerHTML='🗑<br>削除';
+      del.addEventListener('click',()=>softDelete('measures',m.id));
+      const item=document.createElement('div'); item.className='tlog-item'; item.style.cursor='pointer';
+      const valStr = t.fields===2 ? `${m.value}/${m.value2}` : `${m.value}`;
+      const timeStr = m.time ? ` ${m.time}` : '';
+      item.innerHTML=`
+        <div class="tlog-icon" style="background:var(--${t.color}-soft);color:var(--${t.color})">${t.label.slice(0,1)}</div>
+        <div class="tlog-body">
+          <div class="tlog-cat"><span style="font-size:18px;font-weight:800">${valStr}</span> <span style="font-size:12px;color:var(--text3)">${t.unit}</span>${person&&showAll?` ・ <span style="font-size:11px;color:var(--text3)">${escHtml(person.name)}</span>`:''}</div>
+          <div class="tlog-time">${formatDateJP(m.date)}${timeStr}</div>
+          ${m.memo?`<div class="tlog-memo">${escHtml(m.memo)}</div>`:''}
+        </div>
+        <div class="item-btn-row">
+          <button class="habit-hover-del">✕</button>
+          <button class="habit-hover-edit" title="編集">✏️</button>
+        </div>
+      `;
+      item.addEventListener('click',e=>{ if(e.target.closest('.habit-hover-del')||e.target.closest('.habit-hover-edit'))return; openEditMeasure(m.id); });
+      item.querySelector('.habit-hover-edit').addEventListener('click',()=>openEditMeasure(m.id));
+      item.querySelector('.habit-hover-del').addEventListener('click',()=>softDelete('measures',m.id));
+      attachSwipe(wrap, del, ()=>softDelete('measures',m.id));
+      wrap.appendChild(del); wrap.appendChild(item);
+      list.appendChild(wrap);
+    });
+  }
+
+  /* 測定値グラフ（linear時間軸、yyyy年m月ラベル、ホバーで日付） */
+  function renderMeasureChart(){
+    const ctx=document.getElementById('measureChartCanvas');
+    if(!ctx) return;
+    if(measureChart){ try{measureChart.destroy();}catch(e){} measureChart=null; }
+    const t=measureTypeMeta(selectedMeasureKey);
+    const showAll=currentPersonId==='all';
+    let recs=data.measures.filter(m=>!m.deleted && m.typeKey===selectedMeasureKey && m.date && /^\d{4}-\d{2}-\d{2}/.test(String(m.date)) && (showAll||m.personId===currentPersonId));
+    recs.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    if(recs.length===0 || typeof Chart==='undefined') return;
+    const isDark=data.settings.darkMode;
+    const textColor=isDark?'#9aa0be':'#4a5068', gridColor=isDark?'#2a2f44':'#e8ebf3';
+    const toMs=s=>{ const [y,mo,d]=String(s).split('-').map(Number); return new Date(y,mo-1,d).getTime(); };
+    const colorVar=getComputedColor(t.color);
+
+    const datasets=[];
+    if(showAll){
+      const personColors=['#5b7cfa','#22b765','#f0980b','#9c5cf5','#ec4899','#10b3c6'];
+      data.persons.forEach((p,i)=>{
+        const pr=recs.filter(m=>m.personId===p.id); if(!pr.length) return;
+        const col=personColors[i%personColors.length];
+        datasets.push({label:`${p.name} ${t.label}`,data:pr.map(m=>({x:toMs(m.date),y:m.value})),borderColor:col,backgroundColor:'transparent',tension:.3,spanGaps:true,pointRadius:2.5});
+        if(t.fields===2) datasets.push({label:`${p.name} ${t.label}(下)`,data:pr.map(m=>({x:toMs(m.date),y:m.value2})),borderColor:col,backgroundColor:'transparent',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+      });
+    }else{
+      datasets.push({label:t.label,data:recs.map(m=>({x:toMs(m.date),y:m.value})),borderColor:colorVar,backgroundColor:'transparent',tension:.3,spanGaps:true,pointRadius:2.5});
+      if(t.fields===2) datasets.push({label:t.label+'(拡張期)',data:recs.map(m=>({x:toMs(m.date),y:m.value2})),borderColor:colorVar,backgroundColor:'transparent',tension:.3,spanGaps:true,pointRadius:2.5,borderDash:[4,3]});
+    }
+
+    // 目盛り
+    const first=new Date(toMs(recs[0].date)), last=new Date(toMs(recs[recs.length-1].date));
+    const monthSpan=(last.getFullYear()-first.getFullYear())*12+(last.getMonth()-first.getMonth());
+    let stepMonths = monthSpan>72?12:monthSpan>36?12:monthSpan>18?6:monthSpan>6?3:1;
+    const ticks=[]; const start=new Date(first.getFullYear(),first.getMonth(),1); const end=new Date(last.getFullYear(),last.getMonth()+1,1);
+    for(let t2=new Date(start);t2<=end;t2.setMonth(t2.getMonth()+stepMonths)) ticks.push(new Date(t2).getTime());
+
+    measureChart=new Chart(ctx,{
+      type:'line', data:{datasets},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',axis:'x',intersect:false},
+        plugins:{legend:{display:showAll||t.fields===2,position:'bottom',labels:{color:textColor,font:{size:10},boxWidth:16,padding:6}},
+          tooltip:{callbacks:{title:(it)=>{const d=new Date(it[0].parsed.x);return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;},label:(it)=>`${it.dataset.label}: ${it.parsed.y} ${t.unit}`}}},
+        scales:{x:{type:'linear',min:start.getTime(),max:end.getTime(),afterBuildTicks:(ax)=>{ax.ticks=ticks.map(v=>({value:v}));},
+          ticks:{color:textColor,maxRotation:50,font:{size:9},autoSkip:false,callback:(v)=>{const d=new Date(v);return `${d.getFullYear()}年${d.getMonth()+1}月`;}},grid:{color:gridColor}},
+          y:{ticks:{color:textColor,font:{size:10}},grid:{color:gridColor},title:{display:true,text:t.unit,color:textColor,font:{size:10}}}}
+      }
+    });
+  }
+  /* color名 → 実際の色（CSS変数を読む） */
+  function getComputedColor(name){
+    try{ const v=getComputedStyle(document.documentElement).getPropertyValue('--'+name).trim(); return v||'#5b7cfa'; }
+    catch(e){ return '#5b7cfa'; }
+  }
+
+  /* 測定値の追加・編集モーダル */
+  let editingMeasureId=null;
+  function openAddMeasure(){
+    if(data.persons.length===0){ switchTab('settings'); showToast('まず人物を追加してください'); return; }
+    editingMeasureId=null;
+    document.getElementById('modalMeasureTitle').textContent='📊 測定値を追加';
+    buildMeasurePersonSelect(currentPersonId==='all'?data.persons[0].id:currentPersonId);
+    buildMeasureTypeSelect(selectedMeasureKey==='growth'?getMeasureTypes()[0].key:selectedMeasureKey);
+    onMeasureTypeChange();
+    document.getElementById('ms_value').value='';
+    document.getElementById('ms_value2').value='';
+    document.getElementById('ms_memo').value='';
+    document.getElementById('ms_time').value='';
+    setDate('msd', new Date().toISOString().slice(0,10));
+    openModal('modalMeasure');
+  }
+  function openEditMeasure(id){
+    const m=data.measures.find(x=>x.id===id); if(!m) return;
+    editingMeasureId=id;
+    document.getElementById('modalMeasureTitle').textContent='📊 測定値を編集';
+    buildMeasurePersonSelect(m.personId);
+    buildMeasureTypeSelect(m.typeKey);
+    onMeasureTypeChange();
+    document.getElementById('ms_value').value=m.value!=null?m.value:'';
+    document.getElementById('ms_value2').value=m.value2!=null?m.value2:'';
+    document.getElementById('ms_memo').value=m.memo||'';
+    document.getElementById('ms_time').value=m.time||'';
+    setDate('msd', m.date);
+    openModal('modalMeasure');
+  }
+  function buildMeasurePersonSelect(sel){
+    const s=document.getElementById('ms_person'); s.innerHTML='';
+    data.persons.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; s.appendChild(o); });
+    if(sel) s.value=sel;
+  }
+  function buildMeasureTypeSelect(sel){
+    const s=document.getElementById('ms_type'); s.innerHTML='';
+    getMeasureTypes().forEach(t=>{ const o=document.createElement('option'); o.value=t.key; o.textContent=`${t.label} (${t.unit})`; s.appendChild(o); });
+    if(sel) s.value=sel;
+  }
+  function onMeasureTypeChange(){
+    const key=document.getElementById('ms_type').value;
+    const t=measureTypeMeta(key);
+    const v2=document.getElementById('ms_value2_field');
+    if(t.fields===2){
+      v2.style.display='';
+      document.getElementById('ms_value_label').textContent='収縮期（上）';
+      document.getElementById('ms_value2_label').textContent='拡張期（下）';
+    }else{
+      v2.style.display='none';
+      document.getElementById('ms_value_label').textContent=`値（${t.unit}）`;
+    }
+  }
+  function saveMeasure(){
+    const pid=document.getElementById('ms_person').value;
+    const typeKey=document.getElementById('ms_type').value;
+    const t=measureTypeMeta(typeKey);
+    const date=getDateISO('msd');
+    const time=document.getElementById('ms_time').value;
+    const value=parseFloat(document.getElementById('ms_value').value);
+    const value2=t.fields===2?parseFloat(document.getElementById('ms_value2').value):null;
+    const memo=document.getElementById('ms_memo').value.trim();
+    if(!date){ showToast('日付を入力してください'); return; }
+    if(isNaN(value)){ showToast('値を入力してください'); return; }
+    if(t.fields===2 && isNaN(value2)){ showToast('拡張期の値を入力してください'); return; }
+    if(editingMeasureId){
+      const m=data.measures.find(x=>x.id===editingMeasureId);
+      if(m) Object.assign(m,{personId:pid,typeKey,date,time,value,value2,memo,updatedAt:new Date().toISOString()});
+      editingMeasureId=null;
+    }else{
+      data.measures.push({id:uid(),personId:pid,typeKey,date,time,value,value2,memo,createdAt:new Date().toISOString()});
+    }
+    saveData();
+    // 追加した項目を表示中にする
+    if(selectedMeasureKey!=='growth') selectedMeasureKey=typeKey;
+    renderMeasureTabs(); renderMeasureView();
+    closeModal('modalMeasure'); showToast('保存しました');
+  }
+
 
   return {
     init, toggleDark, switchTab,
@@ -2792,12 +4391,18 @@ const App = (() => {
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
     onDateTextInput, dateTextKeyDown, onDatePickerChange, openPicker, clearDateField,
     addPerson, removePerson,
-    addCategory, removeCategory, resetCategories,
+    addCategory, removeCategory, resetCategories, openEditCategory, saveCategoryEdit, moveCategorySelected,
+    toggleMiniTrash,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
     connectGas, disconnectGas, updateApp,
     openCatFilter, applyCatFilter, catFilterSelectAll, filterCatChecks,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
     onHealthSearch, clearHealthSearch, toggleHealthSort,
+    saveTimeLog, stopActiveLog, openEditTimeLog,
+    setScheduleView, scheduleNav, scheduleToday,
+    saveMeasure, openEditMeasure, onMeasureTypeChange,
+    addTimeCategory, removeTimeCategory, resetTimeCategories, openEditTimeCategory, saveTimeCategoryEdit, moveTimeCategorySelected,
+    addMeasureType, removeMeasureType, resetMeasureTypes, openEditMeasureType, saveMeasureTypeEdit, moveMeasureTypeSelected,
   };
 })();
 
