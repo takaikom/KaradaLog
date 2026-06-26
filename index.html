@@ -8,6 +8,7 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v14 : 使い方ガイドへのリンク挿入
   v13 (旧 v12): GASコードとの整合性確認・対応するGAS送信トースト表示を拡充
     - GAS側(karada-log-gas.gs v3)でcategories/timeCategories/measureTypesのシートヘッダーに
       deleted・deletedAtを追加し、growth/healthRecordsのヘッダーにupdatedAt・lockedを追加
@@ -756,6 +757,19 @@ input,select,textarea{font-size:16px;}
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
   padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
 }
+/* 縦幅を狭めたコンパクトカード（上下パディング縮小・1行設定向け） */
+.settings-card.compact{padding:10px 16px;}
+.settings-card.compact .setting-row{padding:6px 0;}
+/* カード自体がボタンになるリンクカード（tsuzukeru の sheet-btn 相当） */
+.settings-card.card-btn{
+  display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;
+  text-decoration:none;color:inherit;transition:background .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.settings-card.card-btn:hover{background:var(--surface2);}
+.settings-card.card-btn:active{background:var(--accent-soft);}
+.settings-card.card-btn .card-btn-text{flex:1;min-width:0;}
+.settings-card.card-btn .card-btn-icon{font-size:18px;color:var(--text2);}
 
 /* ゴミ箱バー */
 .trash-bar{
@@ -1152,23 +1166,21 @@ input,select,textarea{font-size:16px;}
       </div>
     </div>
 
-    <!-- アプリ更新 -->
+    <!-- アプリ更新（カード自体がボタン） -->
     <div class="section-title">🔄 アプリ更新</div>
-    <div class="settings-card">
-      <div class="setting-row">
-        <div>
-          <div class="setting-label">最新版に更新</div>
-          <div class="setting-desc">キャッシュを消去して最新のアプリを再読み込みします</div>
-        </div>
-        <button class="btn-secondary" onclick="App.updateApp()">🔄 更新</button>
+    <div class="settings-card card-btn" role="button" tabindex="0" onclick="App.updateApp()">
+      <div class="card-btn-text">
+        <div class="setting-label">最新版に更新</div>
+        <div class="setting-desc">キャッシュを消去して最新のアプリを再読み込みします</div>
       </div>
+      <span class="card-btn-icon">🔄</span>
     </div>
 
     <!-- データ管理 -->
     <div class="section-title">💾 データ</div>
-    <div class="settings-card">
+    <div class="settings-card compact">
       <div class="setting-row">
-        <div><div class="setting-label">JSONインポート</div><div class="setting-desc">対象の人物を選んで取り込みます</div></div>
+        <div style="flex:1"><div class="setting-label">JSONインポート</div><div class="setting-desc">対象の人物を選んで取り込みます</div></div>
         <input type="file" accept=".json" id="importFile" style="display:none" onchange="App.importJSON(event)">
         <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 読込</button>
       </div>
@@ -1181,6 +1193,219 @@ input,select,textarea{font-size:16px;}
         <button class="btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="App.clearAllData()">🗑 削除</button>
       </div>
     </div>
+
+    <!-- 使い方ガイド（カード内にボタンを配置・ゴミ箱の上） -->
+    <div class="section-title">📖 ヘルプ</div>
+    <div class="settings-card compact">
+      <div class="setting-row">
+        <div style="flex:1"><div class="setting-label">からだログ_使い方ガイド.pdf</div><div class="setting-desc">操作マニュアルを開く（外部リンク）</div></div>
+        <a class="btn-secondary" href="https://drive.google.com/file/d/1M4WwkMukp-pwDKmU4qLo3C4gS6Nshwsp/view?usp=drive_link" target="_blank" rel="noopener" style="text-decoration:none">📖 開く</a>
+      </div>
+      <div class="setting-row">
+        <div style="flex:1"><div class="setting-label">GASコードをコピー</div><div class="setting-desc">ガイドの手順③で貼り付けるコードを一括コピーします</div></div>
+        <button class="btn-secondary" id="copyGasBtn" onclick="App.copyGasCode()">📋 コピー</button>
+      </div>
+    </div>
+
+    <!-- GASコード本体（非表示・コピー用。type="text/plain"なので実行も表示もされない） -->
+    <script type="text/plain" id="gasCodeSource">/* シート名定数 */
+const SHEET_NAMES = {
+  persons: 'persons',
+  growth: 'growth',
+  healthRecords: 'healthRecords',
+  categories: 'categories',
+  timeLogs: 'timeLogs',
+  timeCategories: 'timeCategories',
+  measures: 'measures',
+  measureTypes: 'measureTypes',
+};
+
+/* ============================================================
+  GETリクエスト（データ全取得）
+  ============================================================ */
+function doGet(e) {
+  try {
+    const result = readAllData();
+    return jsonResponse({ status: 'ok', data: result });
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: err.message });
+  }
+}
+
+/* ============================================================
+  POSTリクエスト（同期）
+  ============================================================ */
+function doPost(e) {
+  try {
+    const payload = JSON.parse(e.postData.contents);
+    const action = payload.action || 'sync';
+
+    if (action === 'push') {
+      // 送信のみ: クライアントデータでシートを上書きし、書き込み件数を返す
+      const clientData = payload.data;
+      writeData(clientData);
+      return jsonResponse({
+        status: 'ok', mode: 'push',
+        counts: {
+          persons: (clientData.persons||[]).length,
+          growth: (clientData.growth||[]).length,
+          healthRecords: (clientData.healthRecords||[]).length,
+          categories: (clientData.categories||[]).length,
+          timeLogs: (clientData.timeLogs||[]).length,
+          timeCategories: (clientData.timeCategories||[]).length,
+          measures: (clientData.measures||[]).length,
+          measureTypes: (clientData.measureTypes||[]).length,
+        }
+      });
+    }
+    if (action === 'pull') {
+      // 受信のみ: シートの全データを返す（書き込みしない）
+      return jsonResponse({ status: 'ok', mode: 'pull', data: readAllData() });
+    }
+    if (action === 'sync') {
+      // 従来互換: 書き込み後にマージ結果を返す
+      const clientData = payload.data;
+      writeData(clientData);
+      const merged = readAllData();
+      return jsonResponse({ status: 'ok', data: merged });
+    }
+    return jsonResponse({ status: 'error', message: '不明なaction: ' + action });
+  } catch (err) {
+    return jsonResponse({ status: 'error', message: err.message });
+  }
+}
+
+/* ============================================================
+  全データ読み込み
+  ============================================================ */
+function readAllData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return {
+    persons: readSheet(ss, SHEET_NAMES.persons),
+    growth: readSheet(ss, SHEET_NAMES.growth),
+    healthRecords: readSheet(ss, SHEET_NAMES.healthRecords),
+    categories: readSheet(ss, SHEET_NAMES.categories),
+    timeLogs: readSheet(ss, SHEET_NAMES.timeLogs),
+    timeCategories: readSheet(ss, SHEET_NAMES.timeCategories),
+    measures: readSheet(ss, SHEET_NAMES.measures),
+    measureTypes: readSheet(ss, SHEET_NAMES.measureTypes),
+  };
+}
+
+/**
+ * シートを読み込んでオブジェクト配列を返す
+ * 1行目: ヘッダー（キー名）
+ * 2行目以降: データ
+ */
+function readSheet(ss, sheetName) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values[0].map(String);
+  return values.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      let v = row[i];
+      // 空はnull
+      if (v === '' || v === null || v === undefined) { obj[h] = null; return; }
+      // 日付セル等がDate型で返ることがあるため文字列へ
+      if (Object.prototype.toString.call(v) === '[object Date]') {
+        // start/end（時間記録の日時）は時刻を保持したISO形式に
+        if (h === 'start' || h === 'end') {
+          v = Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+        } else {
+          v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        }
+      }
+      const s = String(v);
+      // boolean復元
+      if (s === 'true') { obj[h] = true; return; }
+      if (s === 'false') { obj[h] = false; return; }
+      // 数値列のみ数値復元（id/personId/date等の文字列は数値化しない）
+      if (['height','weight','chestCirc','headCirc','bmi','dose','value','value2','fields','low','high'].indexOf(h) >= 0 && s !== '' && !isNaN(s)) {
+        obj[h] = Number(s); return;
+      }
+      obj[h] = s;
+    });
+    return obj;
+  }).filter(obj => obj.id || obj.key); // id（または categories の key）が空の行はスキップ
+}
+
+/* ============================================================
+  データ書き込み（差分マージ）
+  同じIDのレコードは上書き、新規IDは追加
+  ============================================================ */
+function writeData(clientData) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (clientData.persons) writeSheet(ss, SHEET_NAMES.persons, clientData.persons, PERSONS_HEADERS);
+  if (clientData.growth) writeSheet(ss, SHEET_NAMES.growth, clientData.growth, GROWTH_HEADERS);
+  if (clientData.healthRecords) writeSheet(ss, SHEET_NAMES.healthRecords, clientData.healthRecords, HEALTH_HEADERS);
+  if (clientData.categories) writeSheet(ss, SHEET_NAMES.categories, clientData.categories, CATEGORY_HEADERS);
+  if (clientData.timeLogs) writeSheet(ss, SHEET_NAMES.timeLogs, clientData.timeLogs, TIMELOG_HEADERS);
+  if (clientData.timeCategories) writeSheet(ss, SHEET_NAMES.timeCategories, clientData.timeCategories, CATEGORY_HEADERS);
+  if (clientData.measures) writeSheet(ss, SHEET_NAMES.measures, clientData.measures, MEASURE_HEADERS);
+  if (clientData.measureTypes) writeSheet(ss, SHEET_NAMES.measureTypes, clientData.measureTypes, MEASURETYPE_HEADERS);
+}
+
+/* 各シートのヘッダー定義（列順） */
+const PERSONS_HEADERS = ['id', 'name', 'birthDate', 'createdAt'];
+const GROWTH_HEADERS  = ['id', 'personId', 'date', 'height', 'weight', 'chestCirc', 'headCirc', 'bmi', 'note', 'locked', 'deleted', 'deletedAt', 'createdAt', 'updatedAt'];
+const HEALTH_HEADERS  = ['id', 'personId', 'date', 'category', 'name', 'body', 'status', 'dose', 'locked', 'deleted', 'deletedAt', 'createdAt', 'updatedAt'];
+// categories / timeCategories 共用。deleted/deletedAt はv12でカテゴリ管理がゴミ箱対応になったため追加
+const CATEGORY_HEADERS = ['key', 'icon', 'color', 'deleted', 'deletedAt'];
+const TIMELOG_HEADERS = ['id', 'personId', 'categoryKey', 'start', 'end', 'memo', 'deleted', 'deletedAt', 'createdAt', 'updatedAt'];
+const MEASURE_HEADERS = ['id', 'personId', 'typeKey', 'date', 'time', 'value', 'value2', 'memo', 'deleted', 'deletedAt', 'createdAt', 'updatedAt'];
+// deleted/deletedAt はv12で測定項目管理がゴミ箱対応になったため追加
+const MEASURETYPE_HEADERS = ['key', 'label', 'unit', 'color', 'fields', 'low', 'high', 'deleted', 'deletedAt'];
+
+/**
+ * シートへの書き込み
+ * 既存シートを全クリア後に再書き込み（シンプルな上書き方式）
+ */
+function writeSheet(ss, sheetName, records, headers) {
+  // シートがなければ作成
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  // ヘッダー行
+  const rows = [headers];
+  // データ行
+  records.forEach(r => {
+    rows.push(headers.map(h => {
+      const v = r[h];
+      if (v === undefined || v === null) return '';
+      if (typeof v === 'boolean') return v ? 'true' : 'false';
+      return String(v);
+    }));
+  });
+
+  // 全クリア後に書き込み
+  sheet.clearContents();
+  // 重要: 書き込み範囲を「書式なしテキスト」に固定する。
+  // これをしないと "2016-12-01" 等がスプレッドシートで日付型に自動変換され、
+  // 読み戻した際にDateオブジェクトになりpersonIdや日付照合がずれて同期が壊れる。
+  if (rows.length > 0) {
+    const range = sheet.getRange(1, 1, rows.length, headers.length);
+    range.setNumberFormat('@');   // @ = テキスト書式
+    range.setValues(rows);
+  }
+
+  // ヘッダー行を太字に
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+}
+
+/* ============================================================
+  JSONレスポンスヘルパー
+  ============================================================ */
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}</script>
 
     <!-- ゴミ箱（旧タブを統合） -->
     <div class="section-title">🗑 ゴミ箱</div>
@@ -3783,6 +4008,33 @@ const App = (() => {
     setTimeout(()=>{ location.reload(); }, 600);
   }
 
+  /* GASコードをクリップボードへ一括コピー（非表示の#gasCodeSourceから取得） */
+  async function copyGasCode(){
+    const src=document.getElementById('gasCodeSource');
+    const code=src ? src.textContent : '';
+    if(!code || !code.trim()){ showToast('コードが見つかりません'); return; }
+    const btn=document.getElementById('copyGasBtn');
+    const done=()=>{
+      showToast('📋 GASコードをコピーしました');
+      if(btn){ const o=btn.textContent; btn.textContent='✅ コピー済み'; setTimeout(()=>{ btn.textContent=o; }, 1600); }
+    };
+    try{
+      // 標準のClipboard API（HTTPS/localhostで利用可）
+      await navigator.clipboard.writeText(code);
+      done();
+    }catch(e){
+      // フォールバック：一時textareaを使ったコピー（古い環境・非セキュアコンテキスト向け）
+      try{
+        const ta=document.createElement('textarea');
+        ta.value=code; ta.style.position='fixed'; ta.style.opacity='0'; ta.style.top='0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        const ok=document.execCommand('copy');
+        document.body.removeChild(ta);
+        if(ok){ done(); } else { showToast('コピーに失敗しました'); }
+      }catch(e2){ showToast('コピーに失敗しました'); }
+    }
+  }
+
   /* ============================================================ GAS送信・受信（分離） ============================================================ */
   /* 共通: GASへPOSTしてJSONを返す（失敗時はnull＋トースト） */
   async function gasRequest(action, includeData){
@@ -4410,7 +4662,7 @@ const App = (() => {
     addCategory, removeCategory, resetCategories, openEditCategory, saveCategoryEdit, moveCategorySelected,
     toggleMiniTrash,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
-    connectGas, disconnectGas, updateApp,
+    connectGas, disconnectGas, updateApp, copyGasCode,
     openCatFilter, applyCatFilter, catFilterSelectAll, filterCatChecks,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
     onHealthSearch, clearHealthSearch, toggleHealthSort,
