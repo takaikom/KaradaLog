@@ -8,6 +8,25 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v15 : 複数グループ対応（家族共有データと、家族に共有したくない個人データを分離）
+    - グループ管理に「ご利用にあたって」折りたたみ注意書きを追加。既存グループと
+      「新しいグループ追加」フォームの間に境界線を入れ、入力欄を「新しいグループ」(例示=グループ名)に変更。
+    - 「グループ」概念を追加。各グループは独立した記録・カテゴリ・測定項目・GAS連携先を持つ。
+    - グループごとに同期モードを選択可能:
+        🔗 GAS連携    … グループ専用のスプレッドシートと同期（家族で共有）
+        💾 デバイス保存のみ … この端末内だけに保存（家族へは共有されない）
+    - 保存構造を変更:
+        各グループ本体 → localStorage キー 'karadaLogData::<groupId>'
+        グループ一覧＋現在グループ → 'karadaLogGroups'
+      旧v14の単一キー 'karadaLogData' は初回起動時に既定グループ「家族共有」へ自動移行。
+    - 設定タブに「🗂 グループ管理」セクションを追加（人物管理の上）。
+      グループの追加・切替（タップ）・編集（名前/同期モード）・削除が可能。
+    - ヘッダーに現在のグループ名バッジを表示（タップで設定タブへ）。
+    - 「デバイス保存のみ」グループでは、ヘッダーの⬆⬇送受信ボタンとGAS連携カードを無効化し、
+      GAS同期処理(gasRequest/connectGas)をブロックして誤送信を防止。
+    - GASコード(.gs)側は変更不要。各グループが別スプレッドシート（別デプロイURL）を指す前提のため、
+      既存の同じGASコードをグループごとのスプレッドシートに割り当てて使う。
+    - 全データ削除・JSONエクスポートは「現在のグループ」単位で動作するよう明確化。
   v14 : 使い方ガイドへのリンク挿入
   v13 (旧 v12): GASコードとの整合性確認・対応するGAS送信トースト表示を拡充
     - GAS側(karada-log-gas.gs v3)でcategories/timeCategories/measureTypesのシートヘッダーに
@@ -290,6 +309,22 @@ input,select,textarea{font-size:16px;}
   display:flex;align-items:center;justify-content:center;font-size:16px;
   transition:background .2s;flex-shrink:0;
 }
+.group-badge{
+  max-width:120px;flex-shrink:0;
+  padding:5px 10px;border-radius:14px;font-size:12px;font-weight:700;
+  background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.group-badge:empty{display:none;}
+.group-current .setting-label{color:var(--accent);}
+.group-add-divider{
+  display:flex;align-items:center;text-align:center;
+  margin:16px 0 4px;color:var(--text3);font-size:11px;font-weight:800;letter-spacing:.04em;
+}
+.group-add-divider::before,.group-add-divider::after{
+  content:"";flex:1;height:1px;background:var(--border);
+}
+.group-add-divider span{padding:0 12px;white-space:nowrap;}@media (max-width:380px){ .group-badge{max-width:84px;font-size:11px;padding:4px 8px;} }
 /* 狭い画面ではアイコンとロゴをさらに圧縮してはみ出しを防ぐ */
 @media (max-width:380px){
   .header{padding:0 8px;gap:4px;}
@@ -848,6 +883,7 @@ input,select,textarea{font-size:16px;}
     <div class="logo-mark">🌿</div>
     <div class="logo-text">からだログ<small>KARADA LOG</small></div>
   </div>
+  <button class="group-badge" id="groupBadge" title="グループ" onclick="App.switchTab('settings')"></button>
   <button class="icon-btn btn-push" id="btnPush" title="送信（アップロード）" onclick="App.pushToGas()">⬆</button>
   <button class="icon-btn btn-pull" id="btnPull" title="受信（ダウンロード）" onclick="App.pullFromGas()">⬇</button>
   <button class="icon-btn btn-mode" id="btnMode" title="ダーク/ライト" onclick="App.toggleDark()">🌙</button>
@@ -989,6 +1025,54 @@ input,select,textarea{font-size:16px;}
 
   <!-- === 設定タブ（ゴミ箱統合） === -->
   <div class="page" id="page-settings">
+
+    <!-- ご利用にあたって（折りたたみ） -->
+    <div class="settings-card" style="margin-bottom:12px;padding:0;">
+      <div class="setting-row" style="cursor:pointer;user-select:none;padding:14px 16px;margin:0;" onclick="App.toggleNotice()">
+        <div class="setting-label" style="flex:1">⚠️ ご利用にあたって</div>
+        <div style="font-size:12px;color:var(--text3);" id="notice-toggle-icon">▼</div>
+      </div>
+      <div id="notice-body" style="display:none;padding:0 16px 14px;font-size:12px;color:var(--text2);line-height:1.8;">
+        このアプリは開発者が個人利用目的で開発したツールです。勝手に機能・仕様変更し、それに伴い不具合が発生したり、予告なく公開終了する可能性があります。<b>ご利用は自己責任でお願いします。</b><br>
+        データの保証はできません（データは開発者側にはありません）。大切な情報は<b>定期的にご自身でバックアップ</b>してください。<br>
+        困ったときは、開発者と個人的なつながりがある方は開発者に直接ご相談ください。<br>なお、使いやすさ向上のために簡単な操作ログ（個人データは含まず、匿名）を収集するかもしれません。
+      </div>
+    </div>
+
+    <!-- グループ管理（複数台帳の切替・追加） -->
+    <div class="section-title">🗂 グループ管理</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">
+        家族で共有したい記録と、共有したくない記録（自分だけ／メモなど）を<b>グループ</b>で分けて管理できます。<br>
+        グループごとに「🔗 GAS連携」か「💾 デバイス保存のみ（このスマホ・PCだけ）」を選べます。<br>
+        タップで切り替え。各グループの記録・カテゴリ・GAS連携先は完全に独立しています。
+      </div>
+      <div id="groupList"></div>
+
+      <!-- 既存グループと「新しいグループ追加」の境界 -->
+      <div class="group-add-divider"><span>＋ 新しいグループを追加</span></div>
+
+      <div class="form-row" style="margin:4px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:1.3">
+          <label>新しいグループ</label>
+          <div class="form-input-wrap" id="wrap_gname">
+            <input type="text" class="form-input" id="newGroupName" inputmode="text" lang="ja" autocapitalize="off" placeholder="グループ名"
+              oninput="App.fieldUpdate('gname')">
+            <button class="btn-clear-field" onclick="App.clearField('newGroupName','gname')">✕</button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:1.2">
+          <label>同期モード</label>
+          <select class="form-input" id="newGroupMode" style="padding:8px 6px">
+            <option value="gas">🔗 GAS連携</option>
+            <option value="local">💾 デバイス保存のみ</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="App.addGroup()">＋ グループを追加</button>
+      </div>
+    </div>
 
     <!-- 人物管理 -->
     <div class="section-title">👥 人物管理</div>
@@ -1150,8 +1234,14 @@ input,select,textarea{font-size:16px;}
 
     <!-- GAS連携 -->
     <div class="section-title">🔗 GAS連携</div>
-    <div class="settings-card">
-      <div class="setting-desc" style="margin-bottom:8px">Google Apps Script のデプロイ済みURLを登録すると同期できます。</div>
+    <div id="gasLocalNote" class="settings-card compact" style="display:none;border-color:var(--orange);color:var(--orange)">
+      <div class="setting-desc" style="color:var(--orange)">
+        💾 このグループは「デバイス保存のみ」です。GAS連携（家族共有）は無効です。<br>
+        共有したい場合は、上の「グループ管理」で同期モードを「GAS連携」に変更してください。
+      </div>
+    </div>
+    <div class="settings-card" id="gasCard">
+      <div class="setting-desc" style="margin-bottom:8px">Google Apps Script のデプロイ済みURLを登録すると同期できます。<br><span style="color:var(--text3)">※このグループ専用のスプレッドシートを指定してください（グループごとに別シート推奨）。</span></div>
       <div class="form-input-wrap" id="wrap_gas">
         <input type="url" class="form-input" id="gasUrl" placeholder="https://script.google.com/macros/s/..."
           oninput="App.fieldUpdate('gas')">
@@ -1686,6 +1776,29 @@ function jsonResponse(obj) {
   </div>
 </div>
 
+<!-- ============================================================ グループ編集モーダル ============================================================ -->
+<div class="modal-overlay" id="modalGroupEdit">
+  <div class="modal-sheet">
+    <div class="modal-title">🗂 グループを編集<button class="modal-close" onclick="App.closeGroupEdit()">✕</button></div>
+    <div class="form-field" style="margin-bottom:12px">
+      <label>グループ名</label>
+      <input type="text" class="form-input" id="ge_name" inputmode="text" lang="ja" autocapitalize="off" placeholder="グループ名">
+    </div>
+    <div class="form-field" style="margin-bottom:6px">
+      <label>同期モード</label>
+      <select class="form-input" id="ge_mode" style="padding:8px 6px">
+        <option value="gas">🔗 GAS連携</option>
+        <option value="local">💾 デバイス保存のみ</option>
+      </select>
+    </div>
+    <div class="setting-desc" style="margin-bottom:4px">「デバイス保存のみ」にすると、このグループのデータは家族に共有されず、この端末内だけに保存されます。</div>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="App.closeGroupEdit()">キャンセル</button>
+      <button class="btn-primary" onclick="App.saveGroupEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================ 健康管理カテゴリ編集モーダル ============================================================ -->
 <div class="modal-overlay" id="modalCatEdit">
   <div class="modal-sheet">
@@ -1856,7 +1969,46 @@ const App = (() => {
   let editingHealthId = null;       // 編集中の健康記録ID（null=新規追加）
   let duplicateHealthPersonId = null; // 複製時に引き継ぐ人物ID
 
-  const LS_KEY = 'karadaLogData';
+  /* ============================================================ グループ（複数台帳）管理 ============================================================
+     v15: 「家族共有」と「自分だけ」など、複数のグループを切り替えて使えるようにする。
+     - 各グループは独立した data（persons/growth/healthRecords/categories/timeLogs/...）を持つ。
+     - グループごとに同期モードを選べる:
+         'gas'   … GAS連携（グループ専用のスプレッドシートと同期）
+         'local' … デバイス保存のみ（このブラウザ内だけ。GASへは送らない）
+     - 保存キー: 各グループの本体は  GROUP_DATA_PREFIX + groupId
+                 グループ一覧/現在のグループは GROUPS_KEY に保存。
+     - 旧バージョン(単一キー 'karadaLogData')のデータは初回に既定グループへ自動移行する。 */
+  const LEGACY_LS_KEY   = 'karadaLogData';      // v14以前の単一キー
+  const GROUPS_KEY      = 'karadaLogGroups';    // グループ一覧＋現在のグループID
+  const GROUP_DATA_PREFIX = 'karadaLogData::';  // 各グループ本体の保存キー接頭辞
+
+  /* グループ一覧の状態（メタ情報のみ。本体dataは別キー）
+     groups: [{ id, name, syncMode:'gas'|'local' }]
+     currentGroupId: 現在開いているグループID */
+  let groups = [];
+  let currentGroupId = null;
+
+  /* 現在のグループ本体の保存キー */
+  const groupDataKey = (gid) => GROUP_DATA_PREFIX + gid;
+  /* 現在のグループのメタ情報を取得 */
+  const currentGroup = () => groups.find(g=>g.id===currentGroupId) || null;
+  /* 現在のグループが「デバイス保存のみ」か */
+  const isLocalOnly = () => { const g=currentGroup(); return g ? g.syncMode==='local' : false; };
+
+  /* このグループ用の空dataを生成（init時のデフォルトを内包） */
+  function blankData(){
+    return {
+      persons: [],
+      growth: [],
+      healthRecords: [],
+      categories: DEFAULT_CATEGORIES.map(c=>({...c})),
+      timeLogs: [],
+      timeCategories: DEFAULT_TIME_CATEGORIES.map(c=>({...c})),
+      measureTypes: DEFAULT_MEASURE_TYPES.map(t=>({...t})),
+      measures: [],
+      settings: { gasUrl:'', gasConnected:false, darkMode:data.settings?.darkMode||false, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }
+    };
+  }
 
   /* 健康カテゴリ デフォルト定義（ワクチンもここに含める）
      ユーザーが設定画面で追加/削除できる。data.categories が無ければこれで初期化。
@@ -1922,10 +2074,12 @@ const App = (() => {
 
   /* ============================================================ 初期化 ============================================================ */
   function init(){
-    loadData();
+    loadGroups();                 // グループ一覧（＋現在グループ）を確定
+    loadData();                   // 現在グループの本体を読込
     applyDarkMode();
     buildDateSelects();           // 各日付セレクトを構築
     buildHealthCatPills();        // モーダルのカテゴリピル
+    renderGroupUI();              // グループ切替バー＋グループ管理リスト
     renderPersonTabs();
     renderMeasureTabs();          // 測定項目タブ
     renderGrowthList();
@@ -1942,6 +2096,7 @@ const App = (() => {
     document.getElementById('gasUrl').value = data.settings.gasUrl || '';
     fieldUpdate('gas');
     renderGasStatus();            // GAS接続状態の表示
+    applySyncModeUI();            // 同期モードに応じてGAS連携UIの有効/無効
     // ポップオーバー外クリックで閉じる
     document.addEventListener('click', e => {
       if(!e.target.closest('.filter-pop') && !e.target.closest('.filter-btn')){
@@ -1951,7 +2106,57 @@ const App = (() => {
   }
 
   /* ============================================================ 保存/読込 ============================================================ */
-  function saveData(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){ showToast('保存失敗:容量不足'); } }
+  /* 現在のグループの本体dataを保存（グループ未確定時はレガシーキーへ保存しない） */
+  function saveData(){
+    try{
+      if(currentGroupId){
+        localStorage.setItem(groupDataKey(currentGroupId), JSON.stringify(data));
+      }else{
+        localStorage.setItem(LEGACY_LS_KEY, JSON.stringify(data));
+      }
+    }catch(e){ showToast('保存失敗:容量不足'); }
+  }
+
+  /* グループ一覧＋現在グループIDの保存 */
+  function saveGroups(){
+    try{ localStorage.setItem(GROUPS_KEY, JSON.stringify({ groups, currentGroupId })); }
+    catch(e){ showToast('グループ保存失敗:容量不足'); }
+  }
+
+  /* グループ一覧の読込。無ければレガシーデータから既定グループへ移行して作成。 */
+  function loadGroups(){
+    let parsed=null;
+    try{ const raw=localStorage.getItem(GROUPS_KEY); if(raw) parsed=JSON.parse(raw); }catch(e){}
+    if(parsed && Array.isArray(parsed.groups) && parsed.groups.length){
+      groups = parsed.groups.map(g=>({
+        id: g.id, name: g.name||'グループ',
+        syncMode: g.syncMode==='local' ? 'local' : 'gas'
+      }));
+      currentGroupId = parsed.currentGroupId && groups.some(g=>g.id===parsed.currentGroupId)
+        ? parsed.currentGroupId : groups[0].id;
+      return;
+    }
+    // 初回（v15化）: 既定グループを1つ作る
+    const gid = uid();
+    let syncMode = 'gas';
+    // レガシーdataがあれば既定グループ本体として移行
+    const legacy = localStorage.getItem(LEGACY_LS_KEY);
+    if(legacy){
+      try{
+        const p=JSON.parse(legacy);
+        // 既にGAS接続済みなら gas、そうでなければ gas を既定に（家族共有想定）
+        syncMode = (p.settings && p.settings.gasConnected) ? 'gas' : 'gas';
+        localStorage.setItem(groupDataKey(gid), legacy);
+      }catch(e){
+        localStorage.setItem(groupDataKey(gid), JSON.stringify(blankData()));
+      }
+    }else{
+      localStorage.setItem(groupDataKey(gid), JSON.stringify(blankData()));
+    }
+    groups = [{ id:gid, name:'家族共有', syncMode }];
+    currentGroupId = gid;
+    saveGroups();
+  }
 
   /* ============================================================ GASマージ（ID単位で統合：消失を防ぐ） ============================================================
      ローカル(local)とリモート(remote)をID単位で統合する。
@@ -2066,7 +2271,9 @@ const App = (() => {
 
   function loadData(){
     try{
-      const raw = localStorage.getItem(LS_KEY);
+      // 現在のグループ本体を読む（未確定時のみレガシーキー）
+      const key = currentGroupId ? groupDataKey(currentGroupId) : LEGACY_LS_KEY;
+      const raw = localStorage.getItem(key);
       if(raw){
         const p = JSON.parse(raw);
         data.persons = p.persons || [];
@@ -2079,18 +2286,178 @@ const App = (() => {
         data.timeCategories = (p.timeCategories && p.timeCategories.length) ? p.timeCategories : DEFAULT_TIME_CATEGORIES.map(c=>({...c}));
         data.measureTypes = (p.measureTypes && p.measureTypes.length) ? p.measureTypes : DEFAULT_MEASURE_TYPES.map(t=>({...t}));
         data.measures = p.measures || [];
-        data.settings = Object.assign(data.settings, p.settings || {});
+        // settingsはグループ単位（gasUrl/gasConnectedはグループ専用）。darkModeは引き継ぐ。
+        const prevDark = data.settings.darkMode;
+        data.settings = Object.assign({ gasUrl:'', gasConnected:false, darkMode:prevDark, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} }, p.settings || {});
+        if(p.settings && p.settings.darkMode!==undefined){ /* グループ保存値を尊重 */ }
         if(!data.settings.chartVisible) data.settings.chartVisible = {height:true,weight:true,chestCirc:false,headCirc:false};
       } else {
-        // 初回起動：デフォルトをセット
+        // 新規グループ：デフォルトをセット
+        data.persons=[]; data.growth=[]; data.healthRecords=[]; data.timeLogs=[]; data.measures=[];
         data.categories = DEFAULT_CATEGORIES.map(c=>({...c}));
         data.timeCategories = DEFAULT_TIME_CATEGORIES.map(c=>({...c}));
         data.measureTypes = DEFAULT_MEASURE_TYPES.map(t=>({...t}));
+        data.settings = { gasUrl:'', gasConnected:false, darkMode:data.settings.darkMode, chartVisible:{height:true,weight:true,chestCirc:false,headCirc:false} };
       }
       normalizeData();  // 読み込み後に型を整える
     }catch(e){ console.error(e); }
   }
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  /* ============================================================ グループ操作 ============================================================ */
+  /* 「ご利用にあたって」折りたたみの開閉 */
+  function toggleNotice(){
+    const body=document.getElementById('notice-body');
+    const icon=document.getElementById('notice-toggle-icon');
+    if(!body) return;
+    const open = body.style.display==='none';
+    body.style.display = open ? '' : 'none';
+    if(icon) icon.textContent = open ? '▲' : '▼';
+  }
+
+  /* 全画面の再描画（グループ切替後に呼ぶ） */
+  function renderAll(){
+    buildHealthCatPills();
+    renderPersonTabs();
+    renderMeasureTabs();
+    renderGrowthList();
+    renderHealthList();
+    renderQuickLogGrid();
+    renderTimeLogList();
+    updateActiveLogCard();
+    renderTrash();
+    renderPersonList();
+    renderCategoryList();
+    renderTimeCategoryList();
+    renderMeasureTypeList();
+    renderMeasureView();
+    const gu=document.getElementById('gasUrl'); if(gu){ gu.value = data.settings.gasUrl || ''; fieldUpdate('gas'); }
+    renderGasStatus();
+    applySyncModeUI();
+    renderGroupUI();
+  }
+
+  /* グループ切替バー（設定タブ上部）と、グループ管理リストを描画 */
+  function renderGroupUI(){
+    // 設定タブ内のグループ管理リスト
+    const listEl=document.getElementById('groupList');
+    if(listEl){
+      listEl.innerHTML='';
+      groups.forEach(g=>{
+        const isCur=g.id===currentGroupId;
+        const modeLabel = g.syncMode==='local' ? '💾 デバイス保存のみ' : '🔗 GAS連携';
+        const row=document.createElement('div');
+        row.className='setting-row'+(isCur?' group-current':'');
+        row.style.cssText='gap:8px;cursor:pointer';
+        row.innerHTML=`
+          <div style="flex:1;min-width:0" data-act="switch">
+            <div class="setting-label">${isCur?'✓ ':''}${escHtml(g.name)}</div>
+            <div class="setting-desc">${modeLabel}</div>
+          </div>
+          <button class="btn-mini edit" data-act="edit" title="編集">✏️</button>
+          <button class="btn-mini purge" data-act="del" title="削除">🗑</button>
+        `;
+        row.querySelector('[data-act=switch]').addEventListener('click',()=>switchGroup(g.id));
+        row.querySelector('[data-act=edit]').addEventListener('click',e=>{ e.stopPropagation(); openEditGroup(g.id); });
+        row.querySelector('[data-act=del]').addEventListener('click',e=>{ e.stopPropagation(); removeGroup(g.id); });
+        listEl.appendChild(row);
+      });
+    }
+    // ヘッダーの現在グループ名表示
+    const badge=document.getElementById('groupBadge');
+    if(badge){
+      const g=currentGroup();
+      badge.textContent = g ? g.name : '';
+      badge.title = g ? (g.syncMode==='local'?'デバイス保存のみ':'GAS連携') : '';
+    }
+  }
+
+  /* グループ切替：現在のdataを保存→対象を読込→全再描画 */
+  function switchGroup(gid){
+    if(gid===currentGroupId) return;
+    if(!groups.some(g=>g.id===gid)) return;
+    saveData();                 // 現在グループを確実に保存
+    currentGroupId=gid;
+    saveGroups();
+    loadData();                 // 新グループ本体を読込
+    // 選択中の人物などをリセット
+    currentPersonId = data.persons[0]?.id || null;
+    healthPersonId='all'; timelogPersonId='all';
+    applyDarkMode();
+    renderAll();
+    const g=currentGroup();
+    showToast('「'+(g?g.name:'')+'」に切り替えました');
+  }
+
+  /* グループ追加 */
+  function addGroup(){
+    const nameEl=document.getElementById('newGroupName');
+    const modeEl=document.getElementById('newGroupMode');
+    const name=(nameEl?.value||'').trim();
+    if(!name){ showToast('グループ名を入力してください'); return; }
+    const syncMode = (modeEl?.value==='local') ? 'local' : 'gas';
+    const gid=uid();
+    groups.push({ id:gid, name, syncMode });
+    // 新グループ用の空dataを保存
+    localStorage.setItem(groupDataKey(gid), JSON.stringify(blankData()));
+    saveGroups();
+    if(nameEl) nameEl.value='';
+    fieldUpdate('gname');
+    renderGroupUI();
+    showToast('グループ「'+name+'」を追加しました');
+  }
+
+  /* グループ編集（名前・同期モード）モーダル */
+  let editingGroupId=null;
+  function openEditGroup(gid){
+    const g=groups.find(x=>x.id===gid); if(!g) return;
+    editingGroupId=gid;
+    document.getElementById('ge_name').value=g.name;
+    document.getElementById('ge_mode').value=g.syncMode;
+    openModal('modalGroupEdit');
+  }
+  function closeGroupEdit(){
+    editingGroupId=null;
+    closeModal('modalGroupEdit');
+  }
+  function saveGroupEdit(){
+    if(!editingGroupId) return;
+    const g=groups.find(x=>x.id===editingGroupId); if(!g) return;
+    const name=(document.getElementById('ge_name').value||'').trim();
+    if(!name){ showToast('グループ名を入力してください'); return; }
+    const mode=document.getElementById('ge_mode').value==='local'?'local':'gas';
+    g.name=name; g.syncMode=mode;
+    // 「デバイス保存のみ」に変更したら、そのグループのGAS接続フラグを解除（誤送信防止）
+    if(mode==='local' && editingGroupId===currentGroupId){
+      data.settings.gasConnected=false; saveData();
+    }
+    saveGroups();
+    const wasCurrent = editingGroupId===currentGroupId;
+    closeGroupEdit();
+    renderGroupUI();
+    if(wasCurrent){ renderGasStatus(); applySyncModeUI(); }
+    showToast('グループを更新しました');
+  }
+
+  /* グループ削除（本体dataも削除）。最後の1つは削除不可。 */
+  function removeGroup(gid){
+    const g=groups.find(x=>x.id===gid); if(!g) return;
+    if(groups.length<=1){ showToast('最後のグループは削除できません'); return; }
+    if(!confirm('グループ「'+g.name+'」を削除します。\nこのグループの記録データ（このデバイス上の保存）も削除されます。\n本当によろしいですか？')) return;
+    // 本体data削除
+    try{ localStorage.removeItem(groupDataKey(gid)); }catch(e){}
+    groups=groups.filter(x=>x.id!==gid);
+    if(currentGroupId===gid){
+      currentGroupId=groups[0].id;
+      loadData();
+      currentPersonId=data.persons[0]?.id||null;
+      healthPersonId='all'; timelogPersonId='all';
+      applyDarkMode();
+    }
+    saveGroups();
+    renderAll();
+    showToast('グループを削除しました');
+  }
 
   /* ============================================================ 年齢・月齢の自動算出 ============================================================
      誕生日(birthDate)と対象日(targetDate)から「○歳○ヵ月」を計算 */
@@ -3863,14 +4230,17 @@ const App = (() => {
   }
 
   function exportJSON(){
+    const g=currentGroup();
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download='karada-log-'+new Date().toISOString().slice(0,10)+'.json';
+    const gname=g?('-'+g.name.replace(/[^\wぁ-んァ-ヶ一-龠ー]/g,'')):'';
+    a.download='karada-log'+gname+'-'+new Date().toISOString().slice(0,10)+'.json';
     a.click(); showToast('エクスポートしました');
   }
   function clearAllData(){
-    if(!confirm('全ての記録を削除します。元に戻せません。')) return;
+    const g=currentGroup();
+    if(!confirm('現在のグループ「'+(g?g.name:'')+'」の全ての記録を削除します。元に戻せません。')) return;
     data.growth=[]; data.healthRecords=[];
     saveData(); renderGrowthList(); renderHealthList(); renderTrash(); showToast('全データ削除しました');
   }
@@ -3902,10 +4272,30 @@ const App = (() => {
     }
   }
 
+  /* 現在グループの同期モードに応じてGAS連携UIを切り替える
+     - 'local'（デバイス保存のみ）: ヘッダーの⬆⬇を隠し、GAS連携カードを無効表示にする
+     - 'gas': 通常表示 */
+  function applySyncModeUI(){
+    const local=isLocalOnly();
+    const pushBtn=document.getElementById('btnPush');
+    const pullBtn=document.getElementById('btnPull');
+    if(pushBtn) pushBtn.style.display = local ? 'none' : '';
+    if(pullBtn) pullBtn.style.display = local ? 'none' : '';
+    // GAS連携カード（設定タブ）を無効化オーバーレイ
+    const gasCard=document.getElementById('gasCard');
+    const gasLocalNote=document.getElementById('gasLocalNote');
+    if(gasCard){
+      gasCard.style.opacity = local ? '.45' : '';
+      gasCard.style.pointerEvents = local ? 'none' : '';
+    }
+    if(gasLocalNote){ gasLocalNote.style.display = local ? '' : 'none'; }
+  }
+
   /* 接続ボタン：URLを保存し、実際に疎通確認してから接続状態にする
      POST(text/plain)を基本とし、失敗時はGETでフォールバック。
      エラー原因を画面に出して切り分けできるようにする。 */
   async function connectGas(){
+    if(isLocalOnly()){ showToast('このグループは「デバイス保存のみ」です。GAS連携にするにはグループ管理で同期モードを変更してください'); return; }
     const url=(document.getElementById('gasUrl').value||'').trim();
     if(!url){ showToast('GAS URLを入力してください'); return; }
     if(!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)){
@@ -4038,6 +4428,9 @@ const App = (() => {
   /* ============================================================ GAS送信・受信（分離） ============================================================ */
   /* 共通: GASへPOSTしてJSONを返す（失敗時はnull＋トースト） */
   async function gasRequest(action, includeData){
+    if(isLocalOnly()){
+      showToast('このグループは「デバイス保存のみ」です（GAS同期は無効）'); return null;
+    }
     const url=(document.getElementById('gasUrl')?.value||data.settings.gasUrl||'').trim();
     if(!url || !data.settings.gasConnected){
       showToast('先に設定タブでGASに接続してください'); switchTab('settings'); return null;
@@ -4659,6 +5052,7 @@ const App = (() => {
     fieldUpdate, clearField, formKeyDown, healthBodyKeyDown,
     onDateTextInput, dateTextKeyDown, onDatePickerChange, openPicker, clearDateField,
     addPerson, removePerson,
+    addGroup, switchGroup, openEditGroup, closeGroupEdit, saveGroupEdit, removeGroup, toggleNotice,
     addCategory, removeCategory, resetCategories, openEditCategory, saveCategoryEdit, moveCategorySelected,
     toggleMiniTrash,
     importJSON, confirmImport, exportJSON, clearAllData, pushToGas, pullFromGas,
