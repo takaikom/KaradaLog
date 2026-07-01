@@ -8,6 +8,31 @@
   「生涯の成長・健康記録」をコンセプトに刷新
 
   【変更履歴】
+  v16 : タブ名称変更・健康カレンダー機能強化・祝日対応
+    - タブ名称変更:「健康管理」→「健康・成長記録」（成長記録も含むことを明確化）
+      あわせてタブアイコンを 🩺 → 🩺🌱 に変更。関連する表記も統一:
+        設定「健康管理カテゴリ」→「健康・成長記録カテゴリ」（説明文も同様に変更）
+        記録追加/編集/複製モーダルのタイトル「健康記録を追加/編集/複製」
+          → 「健康・成長記録を追加/編集/複製」（アイコンも🩺🌱に統一）
+        記録が0件の時の空表示アイコンも🩺🌱に統一
+    - 健康・成長記録タブに月間カレンダーを新規追加（フィルターバーと記録一覧の間）:
+        ‹ › ボタンで月移動、「今日」ボタンで当月に復帰（年月表示のすぐ右に配置）
+        各日にその日の記録をGoogleカレンダー風にカテゴリ色付きの項目名（アイコン＋名称）で表示
+          （入りきらない分は「＋N件」で表示。ドット表示は廃止）
+        日付タップでその日だけに絞り込み表示（再タップで解除）、フィルターの「クリア」で選択も解除
+        カレンダーの集計は現在の人物／カテゴリ／期間／検索フィルターと連動
+        （renderHealthList内のフィルター処理をhealthFilteredBase()に切り出し、
+          カレンダーの日別集計と記録一覧の絞り込みで共通利用するようリファクタリング）
+    - 祝日表示に対応:
+        カレンダー上で祝日は日付を赤字表示し、祝日名を小さく表示
+        自動更新: オンライン時に1日1回、holidays-jp公開API(https://holidays-jp.github.io/api/v1/date.json)
+          から最新の祝日データを起動時にバックグラウンド取得（maybeAutoUpdateHolidays）
+        手動更新: 設定タブ「🎌 祝日」の「🔄 今すぐ更新」ボタンでいつでも再取得可能
+        手動追加・編集・削除: 設定タブから独自の祝日（会社休日など）の追加、既存祝日名の編集、
+          不要な祝日の非表示が可能（直近前後6ヶ月分を一覧表示、手動分は「手動」ラベル表示）
+        オフライン・初回起動時のフォールバックとして2025〜2027年分の祝日データを内蔵
+        祝日データ(自動取得キャッシュ＋手動上書き)は端末のlocalStorageに保存し、
+          グループのGAS同期・エクスポート/インポートとは独立（端末ごとに保持）
   v15 : 複数グループ対応（家族共有データと、家族に共有したくない個人データを分離）
     - グループ管理に「ご利用にあたって」折りたたみ注意書きを追加。既存グループと
       「新しいグループ追加」フォームの間に境界線を入れ、入力欄を「新しいグループ」(例示=グループ名)に変更。
@@ -391,6 +416,62 @@ input,select,textarea{font-size:16px;}
   letter-spacing:.08em;margin:4px 2px 10px;display:flex;align-items:center;gap:6px;
 }
 .section-title-sm{font-size:12px;font-weight:700;color:var(--text3);margin:2px 2px 8px;}
+/* ============================================================
+   健康・成長記録タブ：月間カレンダー
+   ============================================================ */
+.health-cal-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 12px 8px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+.health-cal-header{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.health-cal-title{flex:1;text-align:center;font-size:14px;font-weight:800;color:var(--text);}
+.health-cal-nav{
+  width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);
+  color:var(--text2);font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.health-cal-nav:active{transform:scale(.92);background:var(--surface3);}
+.health-cal-today-btn{
+  padding:5px 10px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);
+  color:var(--text2);font-size:11px;font-weight:700;flex-shrink:0;
+}
+.health-cal-today-btn:active{transform:scale(.95);}
+.health-cal-weekdays{
+  display:grid;grid-template-columns:repeat(7,1fr);text-align:center;
+  font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;
+}
+.health-cal-weekdays .sun{color:var(--red);}
+.health-cal-weekdays .sat{color:var(--accent);}
+.health-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.health-cal-day{
+  position:relative;min-height:64px;display:flex;flex-direction:column;align-items:stretch;
+  border-radius:8px;font-size:11px;font-weight:600;color:var(--text2);cursor:pointer;
+  background:transparent;border:1px solid transparent;padding:3px 2px;gap:1px;overflow:hidden;
+}
+.health-cal-day.other-month{color:var(--text3);opacity:.35;cursor:default;}
+.health-cal-day.sun:not(.other-month) .health-cal-daynum{color:var(--red);}
+.health-cal-day.sat:not(.other-month) .health-cal-daynum{color:var(--accent-dark);}
+.health-cal-day.holiday:not(.other-month) .health-cal-daynum{color:var(--red);}
+.health-cal-day:active:not(.other-month){background:var(--surface2);}
+.health-cal-day.is-today{border-color:var(--border2);}
+.health-cal-day.is-today .health-cal-daynum{color:var(--accent);}
+.health-cal-day.selected{background:var(--accent);border-color:var(--accent);}
+.health-cal-day.selected .health-cal-daynum,
+.health-cal-day.selected.sun .health-cal-daynum,
+.health-cal-day.selected.sat .health-cal-daynum,
+.health-cal-day.selected.holiday .health-cal-daynum{color:#fff;}
+.health-cal-day.selected .health-cal-holiday-name{color:#fff;}
+.health-cal-day.selected .health-cal-chip{background:rgba(255,255,255,.28);color:#fff;}
+.health-cal-day.selected .health-cal-more{color:#fff;}
+.health-cal-daynum{line-height:1;font-size:11px;font-weight:800;text-align:left;padding-left:1px;}
+.health-cal-holiday-name{
+  font-size:8.5px;font-weight:700;color:var(--red);line-height:1.15;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.health-cal-chip{
+  font-size:8.5px;font-weight:600;line-height:1.3;border-radius:3px;padding:0 2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.health-cal-more{font-size:8px;font-weight:800;color:var(--text3);line-height:1.2;padding-left:1px;}
 /* 測定項目タブ（横スクロール） */
 .measure-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;-webkit-overflow-scrolling:touch;}
 .measure-tab{
@@ -892,7 +973,7 @@ input,select,textarea{font-size:16px;}
 <!-- ============================================================ タブ（5つ） ============================================================ -->
 <nav class="tabs">
   <button class="tab-btn active" data-tab="health" onclick="App.switchTab('health')">
-    <span class="tab-icon">🩺</span>健康管理
+    <span class="tab-icon">🩺🌱</span>健康・成長記録
   </button>
   <button class="tab-btn" data-tab="growth" onclick="App.switchTab('growth')">
     <span class="tab-icon">📈</span>測定
@@ -1017,9 +1098,22 @@ input,select,textarea{font-size:16px;}
       <button class="filter-reset" onclick="App.resetHealthFilters()">クリア</button>
       <span class="filter-count" id="healthCount"></span>
     </div>
+    <!-- カレンダー表示（記録がある日を一目で確認・タップで絞り込み） -->
+    <div class="health-cal-card">
+      <div class="health-cal-header">
+        <button class="health-cal-nav" onclick="App.healthCalNav(-1)">‹</button>
+        <div class="health-cal-title" id="healthCalTitle"></div>
+        <button class="health-cal-today-btn" onclick="App.healthCalToday()">今日</button>
+        <button class="health-cal-nav" onclick="App.healthCalNav(1)">›</button>
+      </div>
+      <div class="health-cal-weekdays">
+        <span class="sun">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="sat">土</span>
+      </div>
+      <div class="health-cal-grid" id="healthCalGrid"></div>
+    </div>
     <div class="record-list" id="healthList"></div>
     <div class="empty-state" id="healthEmpty" style="display:none">
-      <div class="es-icon">🩺</div><div class="es-text">記録がありません</div>
+      <div class="es-icon">🩺🌱</div><div class="es-text">記録がありません</div>
     </div>
   </div>
 
@@ -1108,9 +1202,9 @@ input,select,textarea{font-size:16px;}
     </div>
 
     <!-- 健康管理カテゴリ（健康管理タブで使うカテゴリの追加/削除/編集/並べ替え） -->
-    <div class="section-title">🏷 健康管理カテゴリ</div>
+    <div class="section-title">🏷 健康・成長記録カテゴリ</div>
     <div class="settings-card">
-      <div class="setting-desc" style="margin-bottom:10px">健康管理で使うカテゴリを追加・編集・削除・並べ替えできます。</div>
+      <div class="setting-desc" style="margin-bottom:10px">健康・成長記録で使うカテゴリを追加・編集・削除・並べ替えできます。</div>
       <div class="reorder-toolbar" id="catReorderToolbar" style="display:none">
         <span class="reorder-label">選択中のカテゴリを移動：</span>
         <button class="btn-mini" id="catMoveUpBtn" onclick="App.moveCategorySelected(-1)">▲ 上へ</button>
@@ -1146,6 +1240,48 @@ input,select,textarea{font-size:16px;}
       <div class="form-actions">
         <button class="btn-secondary" onclick="App.resetCategories()" style="margin-right:auto">初期に戻す</button>
         <button class="btn-primary" onclick="App.addCategory()">＋ カテゴリを追加</button>
+      </div>
+    </div>
+
+    <!-- 祝日設定（自動更新／手動追加・編集・削除） -->
+    <div class="section-title">🎌 祝日</div>
+    <div class="settings-card">
+      <div class="setting-desc" style="margin-bottom:10px">
+        カレンダーに表示する祝日データです。オンライン時に自動で更新されます（1日1回）。<br>
+        手動での追加・編集・削除もできます（会社独自の休日の追加や、不要な祝日の非表示などに）。
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span id="holidayUpdatedLabel" style="font-size:11px;color:var(--text3)"></span>
+        <button class="btn-secondary" onclick="App.updateHolidays(true)">🔄 今すぐ更新</button>
+      </div>
+      <div id="holidayList"></div>
+      <div class="group-add-divider"><span>＋ 祝日を追加・編集</span></div>
+      <div class="form-row" style="margin:4px 0 0;align-items:flex-end">
+        <div class="form-field" style="flex:1.4">
+          <label>日付</label>
+          <div class="date-input-row" id="newHolidayDateRow">
+            <div class="date-input-wrap" id="wrap_hol">
+              <input type="text" class="form-input" id="hol_text" inputmode="numeric" maxlength="10"
+                placeholder="日付を入力 (例 2026/08/11)"
+                oninput="App.onDateTextInput('hol')" onkeydown="App.dateTextKeyDown(event,'hol')">
+              <button class="btn-clear-field" onclick="App.clearDateField('hol')">✕</button>
+            </div>
+            <button type="button" class="btn-calendar" title="カレンダーから選択" onclick="App.openPicker('hol')">📅
+              <input type="date" id="hol_picker" onchange="App.onDatePickerChange('hol')" tabindex="-1">
+            </button>
+          </div>
+        </div>
+        <div class="form-field" style="flex:1.3">
+          <label>祝日名</label>
+          <div class="form-input-wrap" id="wrap_holname">
+            <input type="text" class="form-input" id="newHolidayName" inputmode="text" lang="ja" autocapitalize="off" placeholder="祝日名"
+              oninput="App.fieldUpdate('holname')">
+            <button class="btn-clear-field" onclick="App.clearField('newHolidayName','holname')">✕</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="App.addHoliday()">＋ 祝日を追加・上書き</button>
       </div>
     </div>
 
@@ -1704,7 +1840,7 @@ function jsonResponse(obj) {
 <!-- ============================================================ 健康管理モーダル（ワクチン含む） ============================================================ -->
 <div class="modal-overlay" id="modalHealth">
   <div class="modal-sheet">
-    <div class="modal-title"><span id="modalHealthTitle">🩺 健康記録を追加</span><button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
+    <div class="modal-title"><span id="modalHealthTitle">🩺🌱 健康・成長記録を追加</span><button class="modal-close" onclick="App.closeModal('modalHealth')">✕</button></div>
     <!-- カテゴリ選択 -->
     <div class="form-field" style="margin-bottom:14px">
       <label>カテゴリ</label>
@@ -1964,6 +2100,10 @@ const App = (() => {
   let healthPeriod = { from:null, to:null };
   let healthSearch = '';            // 検索語
   let healthSortMode = 'date';      // 'date' | 'text-asc' | 'text-desc'
+  // 健康カレンダー状態
+  let healthCalYear = new Date().getFullYear();
+  let healthCalMonth = new Date().getMonth();   // 0-11
+  let healthCalSelected = null;      // 選択中の日付 'YYYY-MM-DD' / null=未選択
   let pendingImport = null;         // インポート保留データ
   let editingGrowthId = null;       // 編集中の成長記録ID（null=新規追加）
   let editingHealthId = null;       // 編集中の健康記録ID（null=新規追加）
@@ -2076,6 +2216,7 @@ const App = (() => {
   function init(){
     loadGroups();                 // グループ一覧（＋現在グループ）を確定
     loadData();                   // 現在グループの本体を読込
+    loadHolidayData();            // 祝日データ読込（自動データ＋手動上書き）
     applyDarkMode();
     buildDateSelects();           // 各日付セレクトを構築
     buildHealthCatPills();        // モーダルのカテゴリピル
@@ -2097,6 +2238,8 @@ const App = (() => {
     fieldUpdate('gas');
     renderGasStatus();            // GAS接続状態の表示
     applySyncModeUI();            // 同期モードに応じてGAS連携UIの有効/無効
+    renderHolidaySettings();      // 祝日一覧（設定タブ）
+    maybeAutoUpdateHolidays();    // オンラインなら1日1回バックグラウンド更新
     // ポップオーバー外クリックで閉じる
     document.addEventListener('click', e => {
       if(!e.target.closest('.filter-pop') && !e.target.closest('.filter-btn')){
@@ -2938,7 +3081,169 @@ const App = (() => {
   }
 
   /* ============================================================ 健康リスト（フィルター適用） ============================================================ */
-  function renderHealthList(){
+  /* 健康記録：人物／カテゴリ／期間／検索フィルターを適用した一覧を返す（日付選択・並べ替えは含まない）
+     カレンダーの「その日に記録があるか」の判定にも同じ条件を再利用する。 */
+  /* ============================================================ 祝日データ（自動更新／手動追加編集） ============================================================
+     - holidayAuto: 自動取得（holidays-jp API）または内蔵デフォルトのデータ（date→名称）
+     - holidayOverrides: 手動追加・編集・削除の上書き情報（date→名称／false=非表示）
+     - 実効的な祝日一覧は getHolidayMap() で auto と overrides をマージして返す
+     - 端末のlocalStorageに保存（グループ・GAS同期とは独立した端末共通データ） */
+  const HOLIDAY_API_URL='https://holidays-jp.github.io/api/v1/date.json';
+  const HOLIDAY_LS_AUTO='karadaLog_holidayAuto_v1';
+  const HOLIDAY_LS_OVERRIDES='karadaLog_holidayOverrides_v1';
+  const HOLIDAY_LS_UPDATED='karadaLog_holidayUpdatedAt_v1';
+  // 取得に失敗した場合や初回起動時に使う内蔵デフォルト（2025〜2027年）
+  const HOLIDAY_DEFAULT={
+    "2025-01-01":"元日","2025-01-13":"成人の日","2025-02-11":"建国記念の日","2025-02-23":"天皇誕生日",
+    "2025-02-24":"天皇誕生日 振替休日","2025-03-20":"春分の日","2025-04-29":"昭和の日","2025-05-03":"憲法記念日",
+    "2025-05-04":"みどりの日","2025-05-05":"こどもの日","2025-05-06":"みどりの日 振替休日","2025-07-21":"海の日",
+    "2025-08-11":"山の日","2025-09-15":"敬老の日","2025-09-23":"秋分の日","2025-10-13":"スポーツの日",
+    "2025-11-03":"文化の日","2025-11-23":"勤労感謝の日","2025-11-24":"勤労感謝の日 振替休日",
+    "2026-01-01":"元日","2026-01-12":"成人の日","2026-02-11":"建国記念の日","2026-02-23":"天皇誕生日",
+    "2026-03-20":"春分の日","2026-04-29":"昭和の日","2026-05-03":"憲法記念日","2026-05-04":"みどりの日",
+    "2026-05-05":"こどもの日","2026-05-06":"憲法記念日 振替休日","2026-07-20":"海の日","2026-08-11":"山の日",
+    "2026-09-21":"敬老の日","2026-09-22":"国民の休日","2026-09-23":"秋分の日","2026-10-12":"スポーツの日",
+    "2026-11-03":"文化の日","2026-11-23":"勤労感謝の日",
+    "2027-01-01":"元日","2027-01-11":"成人の日","2027-02-11":"建国記念の日","2027-02-23":"天皇誕生日",
+    "2027-03-21":"春分の日","2027-03-22":"春分の日 振替休日","2027-04-29":"昭和の日","2027-05-03":"憲法記念日",
+    "2027-05-04":"みどりの日","2027-05-05":"こどもの日","2027-07-19":"海の日","2027-08-11":"山の日",
+    "2027-09-20":"敬老の日","2027-09-23":"秋分の日","2027-10-11":"スポーツの日","2027-11-03":"文化の日",
+    "2027-11-23":"勤労感謝の日"
+  };
+  let holidayAuto={};
+  let holidayOverrides={};
+  let holidayUpdatedAt=null;
+
+  function loadHolidayData(){
+    try{ holidayAuto=JSON.parse(localStorage.getItem(HOLIDAY_LS_AUTO)||'null') || {...HOLIDAY_DEFAULT}; }
+    catch(e){ holidayAuto={...HOLIDAY_DEFAULT}; }
+    try{ holidayOverrides=JSON.parse(localStorage.getItem(HOLIDAY_LS_OVERRIDES)||'{}') || {}; }
+    catch(e){ holidayOverrides={}; }
+    holidayUpdatedAt=localStorage.getItem(HOLIDAY_LS_UPDATED)||null;
+  }
+  function saveHolidayAuto(){ try{ localStorage.setItem(HOLIDAY_LS_AUTO, JSON.stringify(holidayAuto)); }catch(e){} }
+  function saveHolidayOverrides(){ try{ localStorage.setItem(HOLIDAY_LS_OVERRIDES, JSON.stringify(holidayOverrides)); }catch(e){} }
+
+  /* 実効的な祝日マップ（自動データ＋手動上書き。false=非表示） */
+  function getHolidayMap(){
+    const map={...holidayAuto};
+    Object.keys(holidayOverrides).forEach(d=>{
+      const v=holidayOverrides[d];
+      if(v===false) delete map[d];
+      else map[d]=v;
+    });
+    return map;
+  }
+
+  /* 自動更新（holidays-jp APIから取得）。manual=trueならトースト表示あり（設定画面からの手動実行） */
+  function updateHolidays(manual){
+    if(manual) showToast('祝日データを更新しています…');
+    fetch(HOLIDAY_API_URL).then(r=>{ if(!r.ok) throw new Error('bad status'); return r.json(); })
+      .then(json=>{
+        if(json && typeof json==='object'){
+          holidayAuto=json;
+          holidayUpdatedAt=new Date().toISOString();
+          saveHolidayAuto();
+          try{ localStorage.setItem(HOLIDAY_LS_UPDATED, holidayUpdatedAt); }catch(e){}
+          renderHealthCalendar();
+          renderHolidaySettings();
+          if(manual) showToast('祝日データを更新しました');
+        }
+      })
+      .catch(()=>{ if(manual) showToast('更新に失敗しました（オフラインの可能性があります）'); });
+  }
+  /* 1日1回だけ自動でバックグラウンド更新（オンライン時のみ成功） */
+  function maybeAutoUpdateHolidays(){
+    const today=new Date().toISOString().slice(0,10);
+    if(holidayUpdatedAt && holidayUpdatedAt.slice(0,10)===today) return;
+    updateHolidays(false);
+  }
+
+  /* 手動で祝日を追加・上書き（既存の同日祝日は上書き） */
+  function addHoliday(){
+    const iso=getDateISO('hol');
+    const name=(document.getElementById('newHolidayName').value||'').trim();
+    if(!iso){ showToast('日付を入力してください'); return; }
+    if(!name){ showToast('祝日名を入力してください'); return; }
+    holidayOverrides[iso]=name;
+    saveHolidayOverrides();
+    setDate('hol', null);
+    document.getElementById('newHolidayName').value=''; fieldUpdate('holname');
+    renderHealthCalendar();
+    renderHolidaySettings();
+    showToast('祝日を追加しました');
+  }
+  /* 手動上書き（追加・編集）を削除して自動データに戻す／自動データのみの祝日は「非表示」として上書き */
+  function removeHolidayOverride(iso){
+    if(holidayOverrides.hasOwnProperty(iso)){
+      delete holidayOverrides[iso];
+    }else if(holidayAuto.hasOwnProperty(iso)){
+      holidayOverrides[iso]=false; // 自動データを非表示化
+    }
+    saveHolidayOverrides();
+    renderHealthCalendar();
+    renderHolidaySettings();
+  }
+  function editHolidayPrompt(iso, currentName){
+    const name=prompt('祝日名を編集', currentName);
+    if(name===null) return;
+    const trimmed=name.trim();
+    if(!trimmed){ removeHolidayOverride(iso); return; }
+    holidayOverrides[iso]=trimmed;
+    saveHolidayOverrides();
+    renderHealthCalendar();
+    renderHolidaySettings();
+  }
+
+  /* 設定タブ：祝日一覧（直近1年分＝前後6ヶ月）を表示。手動追加・編集したものは強調表示 */
+  function renderHolidaySettings(){
+    const listEl=document.getElementById('holidayList');
+    const updatedEl=document.getElementById('holidayUpdatedLabel');
+    if(!listEl||!updatedEl) return;
+    if(holidayUpdatedAt){
+      const d=new Date(holidayUpdatedAt);
+      updatedEl.textContent=`最終更新: ${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }else{
+      updatedEl.textContent='最終更新: 内蔵データ（未取得）';
+    }
+    const map=getHolidayMap();
+    const now=new Date();
+    const from=new Date(now.getFullYear(), now.getMonth()-6, 1);
+    const to=new Date(now.getFullYear(), now.getMonth()+6, 1);
+    const rows=Object.keys(map).filter(d=>{
+      const dt=new Date(d);
+      return dt>=from && dt<to;
+    }).sort();
+    listEl.innerHTML='';
+    if(rows.length===0){
+      listEl.innerHTML=`<div style="font-size:12px;color:var(--text3);padding:8px 2px">表示できる祝日がありません</div>`;
+      return;
+    }
+    rows.forEach(iso=>{
+      const name=map[iso];
+      const isManual=holidayOverrides.hasOwnProperty(iso);
+      const row=document.createElement('div');
+      row.className='setting-row';
+      row.style.cssText='padding:8px 2px;';
+      row.innerHTML=`
+        <div style="flex:1;min-width:0">
+          <span style="font-weight:700">${formatDateJP(iso)}</span>
+          <span style="margin-left:8px">${escHtml(name)}</span>
+          ${isManual?'<span style="margin-left:6px;font-size:10px;color:var(--accent)">手動</span>':''}
+        </div>
+        <button class="btn-mini" data-act="edit" title="編集">✏️</button>
+        <button class="btn-mini" data-act="del" title="削除">🗑</button>
+      `;
+      row.querySelector('[data-act="edit"]').addEventListener('click', ()=>editHolidayPrompt(iso, name));
+      row.querySelector('[data-act="del"]').addEventListener('click', ()=>removeHolidayOverride(iso));
+      listEl.appendChild(row);
+    });
+  }
+
+
+  /* 健康記録：人物／カテゴリ／期間／検索フィルターを適用した一覧を返す（日付選択・並べ替えは含まない）
+     カレンダーの「その日に記録があるか」の判定にも同じ条件を再利用する。 */
+  function healthFilteredBase(){
     let records=data.healthRecords.filter(r=>!r.deleted);
     // 人物フィルター
     if(healthPersonId!=='all') records=records.filter(r=>r.personId===healthPersonId);
@@ -2957,6 +3262,14 @@ const App = (() => {
         return hay.includes(q);
       });
     }
+    return records;
+  }
+
+  function renderHealthList(){
+    renderHealthCalendar();
+    let records=healthFilteredBase();
+    // カレンダーで選択中の日付があれば絞り込み
+    if(healthCalSelected) records=records.filter(r=>r.date===healthCalSelected);
     // 並べ替え
     if(healthSortMode==='text-asc' || healthSortMode==='text-desc'){
       // テキスト（項目名＋本文）で昇順/降順。日本語はlocaleCompareで自然順
@@ -3038,6 +3351,97 @@ const App = (() => {
     });
   }
 
+  /* ============================================================ 健康記録：月間カレンダー ============================================================ */
+  function renderHealthCalendar(){
+    const titleEl=document.getElementById('healthCalTitle');
+    const grid=document.getElementById('healthCalGrid');
+    if(!titleEl||!grid) return;
+    titleEl.textContent = `${healthCalYear}年${healthCalMonth+1}月`;
+
+    // 現在のフィルター（人物・カテゴリ・期間・検索）に合致する記録を、日付ごとにグループ化
+    const byDate={};
+    healthFilteredBase().forEach(r=>{
+      if(!r.date) return;
+      (byDate[r.date] = byDate[r.date]||[]).push(r);
+    });
+    const holidays=getHolidayMap();
+
+    const todayIso=(()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+    const firstOfMonth=new Date(healthCalYear, healthCalMonth, 1);
+    const startWeekday=firstOfMonth.getDay(); // 0=日
+    const daysInMonth=new Date(healthCalYear, healthCalMonth+1, 0).getDate();
+    const daysInPrevMonth=new Date(healthCalYear, healthCalMonth, 0).getDate();
+
+    const cells=[];
+    // 前月の埋め草
+    for(let i=0;i<startWeekday;i++){
+      const dayNum=daysInPrevMonth-startWeekday+1+i;
+      cells.push({dayNum, otherMonth:true, iso:null});
+    }
+    // 当月
+    for(let d=1; d<=daysInMonth; d++){
+      const iso=`${healthCalYear}-${String(healthCalMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      cells.push({dayNum:d, otherMonth:false, iso});
+    }
+    // 翌月の埋め草（6週分=42マスに揃える）
+    while(cells.length<42){
+      const dayNum=cells.length - (startWeekday+daysInMonth) + 1;
+      cells.push({dayNum, otherMonth:true, iso:null});
+    }
+
+    grid.innerHTML='';
+    cells.forEach((c,idx)=>{
+      const wd=idx%7;
+      const cell=document.createElement('div');
+      cell.className='health-cal-day';
+      if(c.otherMonth) cell.classList.add('other-month');
+      if(wd===0) cell.classList.add('sun');
+      if(wd===6) cell.classList.add('sat');
+      const holidayName = (!c.otherMonth && c.iso) ? holidays[c.iso] : null;
+      if(holidayName) cell.classList.add('holiday');
+      if(!c.otherMonth && c.iso===todayIso) cell.classList.add('is-today');
+      if(!c.otherMonth && c.iso===healthCalSelected) cell.classList.add('selected');
+
+      const records = (!c.otherMonth && c.iso) ? (byDate[c.iso]||[]) : [];
+      const maxChips = holidayName ? 2 : 3;
+      const shown = records.slice(0, maxChips);
+      const remaining = records.length - shown.length;
+
+      let inner = `<div class="health-cal-daynum">${c.dayNum}</div>`;
+      if(holidayName){
+        inner += `<div class="health-cal-holiday-name" title="${escHtml(holidayName)}">${escHtml(holidayName)}</div>`;
+      }
+      shown.forEach(r=>{
+        const cm=catMeta(r.category);
+        const label=`${cm.icon}${r.name||r.category}`;
+        inner += `<div class="health-cal-chip" style="background:var(--${cm.color}-soft);color:var(--${cm.color})" title="${escHtml(label)}">${escHtml(label)}</div>`;
+      });
+      if(remaining>0){
+        inner += `<div class="health-cal-more">+${remaining}件</div>`;
+      }
+      cell.innerHTML = inner;
+      if(!c.otherMonth) cell.addEventListener('click', ()=>healthCalSelectDay(c.iso));
+      grid.appendChild(cell);
+    });
+  }
+
+  function healthCalNav(delta){
+    healthCalMonth += delta;
+    if(healthCalMonth<0){ healthCalMonth=11; healthCalYear--; }
+    else if(healthCalMonth>11){ healthCalMonth=0; healthCalYear++; }
+    renderHealthCalendar();
+  }
+  function healthCalToday(){
+    const now=new Date();
+    healthCalYear=now.getFullYear(); healthCalMonth=now.getMonth();
+    renderHealthCalendar();
+  }
+  function healthCalSelectDay(iso){
+    if(!iso) return;
+    healthCalSelected = (healthCalSelected===iso) ? null : iso;
+    renderHealthList();
+  }
+
   /* ============================================================ 健康記録のコピー（クリップボードへ） ============================================================ */
   /* ============================================================ 健康記録の複製（同じ内容で新規追加の編集画面を開く） ============================================================
      コピーボタン押下で、元の記録と同じ内容を入力済みにした「新規追加」モーダルを開く。
@@ -3045,7 +3449,7 @@ const App = (() => {
   function copyHealthRecord(r){
     editingHealthId=null;  // 新規追加モード（複製なので別レコードになる）
     duplicateHealthPersonId=r.personId;  // 複製先の人物は元と同じにする
-    document.getElementById('modalHealthTitle').textContent='🩺 健康記録を複製';
+    document.getElementById('modalHealthTitle').textContent='🩺🌱 健康・成長記録を複製';
     // カテゴリ・各値を元の記録から引き継ぐ
     selectedCat=r.category||'その他';
     buildHealthCatPills(); onCatChange();
@@ -3154,7 +3558,7 @@ const App = (() => {
   }
   function resetHealthFilters(){
     healthCatFilter=null; healthPeriod={from:null,to:null};
-    healthSearch=''; healthSortMode='date';
+    healthSearch=''; healthSortMode='date'; healthCalSelected=null;
     const si=document.getElementById('healthSearch'); if(si) si.value='';
     document.getElementById('healthSearchClear').style.display='none';
     updateSortLabel();
@@ -3287,7 +3691,7 @@ const App = (() => {
     else if(currentTab==='health'){
       editingHealthId=null;  // 新規モード
       duplicateHealthPersonId=null;  // 通常追加なので複製人物はクリア
-      document.getElementById('modalHealthTitle').textContent='🩺 健康記録を追加';
+      document.getElementById('modalHealthTitle').textContent='🩺🌱 健康・成長記録を追加';
       resetHealthForm(); openModal('modalHealth');
     }
   }
@@ -3333,7 +3737,7 @@ const App = (() => {
     const r=data.healthRecords.find(x=>x.id===id); if(!r) return;
     if(r.locked){ showToast('🔒 ロック中の項目は編集できません'); return; }
     editingHealthId=id;  // 編集モード
-    document.getElementById('modalHealthTitle').textContent='🩺 健康記録を編集';
+    document.getElementById('modalHealthTitle').textContent='🩺🌱 健康・成長記録を編集';
     // カテゴリ復元
     selectedCat=r.category||'その他';
     buildHealthCatPills(); onCatChange();
@@ -5060,6 +5464,8 @@ const App = (() => {
     openCatFilter, applyCatFilter, catFilterSelectAll, filterCatChecks,
     openPeriodFilter, applyPeriodFilter, clearPeriodFilter, resetHealthFilters,
     onHealthSearch, clearHealthSearch, toggleHealthSort,
+    healthCalNav, healthCalToday,
+    updateHolidays, addHoliday,
     saveTimeLog, stopActiveLog, openEditTimeLog,
     setScheduleView, scheduleNav, scheduleToday,
     saveMeasure, openEditMeasure, onMeasureTypeChange,
